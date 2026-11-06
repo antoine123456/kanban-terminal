@@ -8,10 +8,11 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 import webbrowser
 
 from rich.text import Text
-from textual import on, work
+from textual import events, on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
@@ -25,6 +26,33 @@ from .model import COLUMNS, Board, Card, is_inbox
 COL_NAMES = dict(COLUMNS)
 SECTION_COLORS = ["#4f8ff7", "#f25f5c", "#b48ead", "#56b6c2", "#e5c07b"]
 INBOX_COLOR = "#d7a700"
+
+
+class CardList(OptionList):
+    """A column. A click selects the card; a click on the card already
+    selected (in the focused column) opens its detail."""
+
+    _focused_at = 0.0
+    _armed: int | None = None
+
+    def _on_focus(self, event: events.Focus) -> None:
+        self._focused_at = time.monotonic()
+
+    def _on_mouse_down(self, event: events.MouseDown) -> None:
+        # Focus comes with this very press when the column wasn't focused.
+        was_focused = time.monotonic() - self._focused_at > 0.15
+        self._armed = self.highlighted if was_focused else None
+
+    async def _on_click(self, event: events.Click) -> None:
+        event.prevent_default()
+        i = event.style.meta.get("option")
+        if i is None:
+            return
+        if i == self._armed:
+            self.action_select()
+        else:
+            self.highlighted = i
+        self._armed = None
 
 
 # ── Small dialogs ──
@@ -87,7 +115,7 @@ class Detail(ModalScreen[None]):
         self.dismiss(None)
 
 
-HELP = """[b]Se déplacer[/b]  ←→ colonne · ↑↓ carte · Entrée détail · clic souris
+HELP = """[b]Se déplacer[/b]  ←→ colonne · ↑↓ carte · Entrée détail · clic : sélectionner, re-clic : détail
 [b]Déplacer la carte[/b]  ⇧← ⇧→ (ou < >) · 1 À trier · 2 À faire · 3 En cours · 4 Fait
 [b]Écrire[/b]  a ajouter (dans À trier) · e modifier le texte · E ouvrir dans l'éditeur à la ligne
 [b]GitHub[/b]  o ouvrir l'issue · i créer l'issue de la carte · c fermer / rouvrir l'issue · g actualiser
@@ -148,7 +176,7 @@ class KanbanApp(App):
             for key, name in COLUMNS:
                 with Vertical(classes="col", id=f"col-{key}"):
                     yield Label(name, classes="col-title", id=f"title-{key}")
-                    yield OptionList(id=f"list-{key}")
+                    yield CardList(id=f"list-{key}")
         yield Static(id="detail")
         yield Footer()
 

@@ -135,5 +135,38 @@ class AppTest(unittest.TestCase):
             os.remove(path)
 
 
+class ClickTest(unittest.TestCase):
+    def test_click_selects_then_opens(self):
+        from kanban_terminal.app import Detail, KanbanApp
+        fd, path = tempfile.mkstemp(suffix=".md")
+        os.write(fd, SAMPLE.encode()); os.close(fd)
+
+        async def run():
+            app = KanbanApp(path, repo=None)
+            app.gh.available = False
+            async with app.run_test(size=(140, 16)) as pilot:
+                await pilot.pause()
+                lst = app.query_one("#list-inbox")
+                await pilot.click("#list-inbox", offset=(3, 1))     # 2nd card, other column
+                await pilot.pause()
+                self.assertEqual(app.focused_col(), "inbox")
+                self.assertEqual(lst.highlighted, 1)
+                self.assertNotIsInstance(app.screen, Detail)
+                await asyncio.sleep(0.2)
+                await pilot.click("#list-inbox", offset=(3, 1))     # same card again → detail
+                await pilot.pause()
+                self.assertIsInstance(app.screen, Detail)
+                await pilot.press("escape")
+                await asyncio.sleep(0.2)
+                await pilot.click("#list-inbox", offset=(3, 0))     # another card → just selected
+                await pilot.pause()
+                self.assertEqual(lst.highlighted, 0)
+                self.assertNotIsInstance(app.screen, Detail)
+        try:
+            asyncio.run(run())
+        finally:
+            os.remove(path)
+
+
 if __name__ == "__main__":
     unittest.main()
