@@ -25,7 +25,10 @@ cd ~/Documents/kanban-terminal && python3 -m venv .venv && .venv/bin/pip install
 kanban                 # cherche idee.md, ideas.md, TODO.md… dans le dossier courant
 kanban chemin/idees.md
 kanban --repo propriétaire/nom   # si le dépôt GitHub n'est pas celui du git du fichier
+kanban --theme light             # ou dark ; auto par défaut (aussi : KANBAN_THEME=light)
 ```
+
+**Clair ou sombre** : comme le terminal autour. Au démarrage, le tableau demande au terminal sa couleur de fond ; sinon il lit le thème de VS Code (`workbench.colorTheme`, ou le thème jour / nuit si `window.autoDetectColorScheme` est activé), sinon l'apparence du système. Il suit ensuite les changements (VS Code ou macOS qui passent en mode nuit) toutes les 3 s. **T** bascule à la main.
 
 Dans VS Code, ouvre un terminal dans le panneau du bas (⌃`), lance `kanban`, puis déplace le terminal où tu veux (clic droit sur l'onglet → « Déplacer dans la zone d'éditeur » pour l'avoir à côté du code).
 
@@ -39,7 +42,7 @@ Dans VS Code, ouvre un terminal dans le panneau du bas (⌃`), lance `kanban`, p
 | **e** / **E** | modifier le texte / ouvrir le fichier à la ligne dans VS Code (`code -g`) ou `$EDITOR` |
 | **o** · **i** · **c** · **g** | GitHub : ouvrir l'issue · créer l'issue de la carte (milestone d'après son tag) · fermer / rouvrir · actualiser |
 | **/** · **t** · **s** · **f** · **w** | chercher · filtrer par tag (@v1…) · par section · cacher « Fait » · texte complet sur plusieurs lignes |
-| **Échap** · **r** · **?** · **q** | effacer les filtres · recharger · aide · quitter |
+| **Échap** · **r** · **T** · **?** · **q** | effacer les filtres · recharger · clair / sombre · aide · quitter |
 
 En sortant une carte de « À trier », le tableau demande dans quelle section la ranger (Idées, Correction…). Une carte passée dans « Fait » qui a une issue encore ouverte propose de la fermer sur GitHub.
 

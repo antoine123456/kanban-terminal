@@ -20,6 +20,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Footer, Input, Label, OptionList, Static
 from textual.widgets.option_list import Option
 
+from . import theme as th
 from .gh import GitHub, milestone_tag, tag_milestone
 from .model import COLUMNS, Board, Card, is_inbox
 
@@ -120,7 +121,8 @@ HELP = """[b]Se déplacer[/b]  ←→ colonne · ↑↓ carte · Entrée détail
 [b]Écrire[/b]  a ajouter (dans À trier) · e modifier le texte · E ouvrir dans l'éditeur à la ligne
 [b]GitHub[/b]  o ouvrir l'issue · i créer l'issue de la carte · c fermer / rouvrir l'issue · g actualiser
 [b]Filtres[/b]  / chercher · t tag (@v1…) · s section · f cacher « Fait » · w texte complet · Échap tout effacer
-[b]Fichier[/b]  rechargé tout seul quand il change · r recharger · q quitter"""
+[b]Fichier[/b]  rechargé tout seul quand il change · r recharger · q quitter
+[b]Thème[/b]  clair / sombre comme VS Code (suit ses changements) · T basculer à la main"""
 
 
 class KanbanApp(App):
@@ -154,12 +156,15 @@ class KanbanApp(App):
         Binding("o", "open_issue", "issue"), Binding("i", "create_issue", show=False), Binding("c", "close_issue", show=False),
         Binding("slash", "search", "chercher"), Binding("t", "cycle_tag", "tag"), Binding("s", "cycle_section", show=False),
         Binding("f", "toggle_done", show=False), Binding("w", "toggle_wrap", show=False), Binding("escape", "clear_filters", show=False),
-        Binding("g", "refresh_gh", show=False), Binding("r", "reload", show=False),
+        Binding("g", "refresh_gh", show=False), Binding("T", "toggle_mode", show=False), Binding("r", "reload", show=False),
         Binding("question_mark", "help", "aide"), Binding("q", "quit", "quitter"),
     ]
 
-    def __init__(self, path: str, repo: str | None = None):
+    def __init__(self, path: str, repo: str | None = None, mode: str = th.DARK, follow: bool = True):
         super().__init__()
+        self.mode = mode          # light / dark, like the editor around (theme.py)
+        self.follow = follow      # keep following VS Code / the OS when they change
+        self._sys_mode: str | None = None
         self.board = Board(path)
         self.gh = GitHub(os.path.dirname(self.board.path), repo)
         self.query_text = ""
@@ -184,11 +189,32 @@ class KanbanApp(App):
         self.call_after_refresh(self.rebuild)
 
     def on_mount(self) -> None:
+        self.apply_mode()
+        if self.follow:
+            self._sys_mode = th.from_settings()
+            self.set_interval(3.0, self.check_mode)
         self.rebuild()
         self.call_after_refresh(self.rebuild)
         self.query_one("#list-todo", OptionList).focus()
         self.set_interval(1.0, self.watch_file)
         self.load_issues()
+
+    # ── light / dark ──
+    def apply_mode(self) -> None:
+        self.theme = "textual-light" if self.mode == th.LIGHT else "textual-dark"
+
+    @work(thread=True, exclusive=True, group="mode")
+    def check_mode(self) -> None:
+        """VS Code (or the OS) switched day / night: the board follows."""
+        m = th.from_settings()
+        if m and m != self._sys_mode:
+            self._sys_mode = m
+            self.mode = m
+            self.call_from_thread(self.apply_mode)
+
+    def action_toggle_mode(self) -> None:
+        self.mode = th.DARK if self.mode == th.LIGHT else th.LIGHT
+        self.apply_mode()
 
     # ── data → screen ──
     def section_color(self, section: str) -> str:
@@ -578,11 +604,15 @@ def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(prog="kanban", description="Un fichier Markdown d'idées en Kanban interactif dans le terminal.")
     ap.add_argument("file", nargs="?", help="fichier Markdown (par défaut : idee.md, ideas.md, TODO.md… du dossier courant)")
     ap.add_argument("--repo", help="dépôt GitHub propriétaire/nom (par défaut : celui du git du fichier)")
+    ap.add_argument("--theme", choices=["auto", "light", "dark"], default=os.environ.get("KANBAN_THEME", "auto"),
+                    help="clair, sombre, ou auto : comme le terminal / VS Code / le système (par défaut)")
     a = ap.parse_args(argv)
     path = a.file or find_file(os.getcwd())
     if not path or not os.path.exists(path):
         sys.exit("kanban : aucun fichier trouvé (idee.md, ideas.md, TODO.md…). Donne son chemin : kanban chemin/vers/idees.md")
-    KanbanApp(path, a.repo).run()
+    auto = a.theme == "auto"
+    mode = (th.terminal_background() or th.from_settings() or th.DARK) if auto else a.theme
+    KanbanApp(path, a.repo, mode, follow=auto).run()
 
 
 if __name__ == "__main__":
