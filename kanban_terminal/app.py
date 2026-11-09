@@ -27,6 +27,7 @@ from .model import COLUMNS, Board, Card, is_inbox
 COL_NAMES = dict(COLUMNS)
 SECTION_COLORS = ["#4f8ff7", "#f25f5c", "#b48ead", "#56b6c2", "#e5c07b"]
 INBOX_COLOR = "#d7a700"
+LATER = "plus-tard"  # the tag that puts a card aside
 
 
 class CardList(OptionList):
@@ -223,8 +224,14 @@ class KanbanApp(App):
         ws = self.board.work_sections
         return SECTION_COLORS[ws.index(section) % len(SECTION_COLORS)] if section in ws else "#888888"
 
+    @staticmethod
+    def tags_of(c: Card) -> list[str]:
+        """@plus-tard wins over the other tags: the card is put aside, whatever
+        its version (@v1 @plus-tard → only @plus-tard, and it isn't under the @v1 filter)."""
+        return [LATER] if LATER in c.tags else c.tags
+
     def visible(self, c: Card) -> bool:
-        if self.tag and self.tag not in c.tags:
+        if self.tag and self.tag not in self.tags_of(c):
             return False
         if self.section and c.section != self.section and not is_inbox(c.section):
             return False
@@ -235,16 +242,17 @@ class KanbanApp(App):
 
     def card_text(self, c: Card, width: int = 0) -> Text:
         head = Text()
-        head.append("▌", style=self.section_color(c.section))
+        later = LATER in c.tags  # put aside: the whole card goes quiet
+        head.append("▌", style="#777777" if later else self.section_color(c.section))
         if c.custom_mark:
             head.append(f"{c.custom_mark} ", style=f"bold {INBOX_COLOR}")
-        body = Text(re.sub(r"\s*\(#\d+\)", "", c.text), style="dim" if c.col == "done" else "")  # the issue is a chip
+        body = Text(re.sub(r"\s*\(#\d+\)", "", c.text), style="dim italic" if later else "dim" if c.col == "done" else "")  # the issue is a chip
         tail = Text()
         for n in c.issues:
             st = self.gh.state(n)
-            tail.append(f" #{n}{'✓' if st == 'closed' else ''}", style="green" if st == "closed" else "cyan")
-        for tg in c.tags:
-            tail.append(f" @{tg}", style="magenta")
+            tail.append(f" #{n}{'✓' if st == 'closed' else ''}", style="dim" if later else "green" if st == "closed" else "cyan")
+        for tg in self.tags_of(c):
+            tail.append(f" @{tg}", style="dim" if later else "magenta")
         if c.notes:
             tail.append(f" +{len(c.notes)}", style="dim")
         # One line per card by default (a short bottom panel shows more), w
@@ -485,7 +493,7 @@ class KanbanApp(App):
             if not self.gh.ok:
                 self.notify("gh ou dépôt GitHub indisponible", severity="warning")
             return
-        ms = next((tag_milestone(t, self.gh.milestones) for t in c.tags if tag_milestone(t, self.gh.milestones)), None)
+        ms = next((tag_milestone(t, self.gh.milestones) for t in self.tags_of(c) if tag_milestone(t, self.gh.milestones)), None)
         choices = ([ms] if ms else []) + [m for m in self.gh.milestones if m != ms] + ["(sans milestone)"]
 
         def picked(m):
@@ -577,7 +585,7 @@ class KanbanApp(App):
             t.append(f" › {c.group}", style="dim")
         t.append(f"   ligne {c.line + 1}\n\n", style="dim")
         t.append(c.text + "\n")
-        for tg in c.tags:
+        for tg in self.tags_of(c):
             t.append(f"@{tg} ", style="magenta")
         if c.notes:
             t.append("\n")

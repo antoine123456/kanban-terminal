@@ -52,6 +52,7 @@ En sortant une carte de « À trier », le tableau demande dans quelle section l
 ## Idées                          une section = une catégorie de cartes
 - [ ] à faire                     [ ] À faire · [_] En cours · [x] ou [X] Fait
 - [_] à moitié fait (#12) @v1     #12 = issue GitHub · @v1 = tag (le milestone de l'issue)
+- [ ] mise de côté @v1 @plus-tard @plus-tard l'emporte : carte grisée, hors du filtre @v1
   - une note                      les lignes indentées sont les notes de la carte
 conjugaison:                      une ligne finie par « : » = groupe des cartes qui suivent
 ## Correction
