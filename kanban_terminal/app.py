@@ -123,7 +123,8 @@ HELP = """[b]Se déplacer[/b]  ←→ colonne · ↑↓ carte · Entrée détail
 [b]GitHub[/b]  o ouvrir l'issue · i créer l'issue de la carte · c fermer / rouvrir l'issue · g actualiser
 [b]Filtres[/b]  / chercher · t tag (@v1…) · s section · f cacher « Fait » · w texte complet · Échap tout effacer
 [b]Fichier[/b]  rechargé tout seul quand il change · r recharger · q quitter
-[b]Thème[/b]  clair / sombre comme VS Code (suit ses changements) · T basculer à la main"""
+[b]Thème[/b]  clair / sombre comme VS Code (suit ses changements) · T basculer à la main
+[b]Claude[/b]  x traiter la carte avec Claude · X traiter « À trier » (Pending) · le tableau revient quand Claude se ferme"""
 
 
 class KanbanApp(App):
@@ -158,6 +159,7 @@ class KanbanApp(App):
         Binding("slash", "search", "chercher"), Binding("t", "cycle_tag", "tag"), Binding("s", "cycle_section", show=False),
         Binding("f", "toggle_done", show=False), Binding("w", "toggle_wrap", show=False), Binding("escape", "clear_filters", show=False),
         Binding("g", "refresh_gh", show=False), Binding("T", "toggle_mode", show=False), Binding("r", "reload", show=False),
+        Binding("x", "claude", "claude"), Binding("X", "claude_inbox", show=False),
         Binding("question_mark", "help", "aide"), Binding("q", "quit", "quitter"),
     ]
 
@@ -472,6 +474,29 @@ class KanbanApp(App):
         with self.suspend():
             subprocess.call([editor, f"+{c.line + 1}", self.board.path])
         self.reload()
+
+    # ── Claude (#185): the board steps aside, Claude Code runs in this very
+    # terminal, in the file's folder; the board comes back (reloaded) when
+    # Claude is closed. KANBAN_CLAUDE changes the command (default: claude).
+    def run_claude(self, prompt: str) -> None:
+        cmd = os.environ.get("KANBAN_CLAUDE", "claude").split()
+        if not shutil.which(cmd[0]):
+            self.notify(f"« {cmd[0]} » introuvable (Claude Code n'est pas installé ?)", severity="error")
+            return
+        with self.suspend():
+            subprocess.call(cmd + [prompt], cwd=os.path.dirname(os.path.abspath(self.board.path)))
+        self.reload()
+
+    def action_claude(self) -> None:
+        c = self.current()
+        if not c:
+            return
+        name = os.path.basename(self.board.path)
+        self.run_claude(f"Traite cette carte de {name} (section « {c.section} », ligne {c.line + 1}) :\n{c.raw.strip()}"
+                        + "".join("\n" + n for n in c.notes))
+
+    def action_claude_inbox(self) -> None:
+        self.run_claude(f"Exécute « Pending » : traite les idées de la boîte de réception de {os.path.basename(self.board.path)}.")
 
     def action_open_issue(self) -> None:
         c = self.current()
