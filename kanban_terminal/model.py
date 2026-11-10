@@ -92,6 +92,14 @@ class Board:
     def tags(self) -> list[str]:
         return sorted({t for c in self.cards for t in c.tags})
 
+    def tag_counts(self) -> dict[str, int]:
+        """How many cards carry each tag, most used first."""
+        n: dict[str, int] = {}
+        for c in self.cards:
+            for t in c.tags:
+                n[t] = n.get(t, 0) + 1
+        return dict(sorted(n.items(), key=lambda kv: (-kv[1], kv[0])))
+
     # ── writing ──
     def _locate(self, lines: list[str], card: Card) -> int:
         """The card's line now: same place if unchanged, else the nearest identical line."""

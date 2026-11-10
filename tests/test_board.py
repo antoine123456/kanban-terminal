@@ -118,7 +118,9 @@ class AppTest(unittest.TestCase):
                 await pilot.press("4")                         # → Fait
                 await pilot.pause()
                 self.assertIn("- [X] 1. si la carte ne tient pas @ui", read(path))
-                await pilot.press("t")                         # first tag filter
+                await pilot.press("t")                         # the tag menu (by groups)
+                await pilot.pause()
+                await pilot.press("u", "i", "enter")           # narrowed to @ui, taken
                 await pilot.pause()
                 self.assertEqual(app.tag, "ui")
                 self.assertEqual(sum(len(v) for v in app.shown.values()), 1)

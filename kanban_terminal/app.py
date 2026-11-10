@@ -17,6 +17,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
+from textual.suggester import Suggester
 from textual.widgets import Footer, Input, Label, OptionList, Static
 from textual.widgets.option_list import Option
 
@@ -57,20 +58,62 @@ class CardList(OptionList):
         self._armed = None
 
 
+# ── Tags: groups and completion ──
+TYPE_TAGS = {"bug", "feature", "idée", "idee", "question", "ui", "doc", "perf"}
+TAG_GROUPS = ["Jalons", "Type", "Thèmes"]
+
+
+def tag_group(tag: str) -> str:
+    """The tags in three groups (a hierarchy for the t menu): the milestones
+    (@v1, @v2, @volet1, @plus-tard), the kind of card (@bug, @feature…) and the
+    rest — what the card is about (@helmoltz, @kanban…)."""
+    t = tag.lower()
+    if re.fullmatch(r"v\d+|volet\d+", t) or t == LATER:
+        return "Jalons"
+    return "Type" if t in TYPE_TAGS else "Thèmes"
+
+
+class TagSuggester(Suggester):
+    """After an @, the most used tag that starts with what's typed (Tab or →
+    takes it)."""
+
+    def __init__(self, tags: list[str]):
+        super().__init__(use_cache=False, case_sensitive=True)
+        self.tags = tags  # most used first
+
+    async def get_suggestion(self, value: str) -> str | None:
+        m = re.search(r"@([\w\-]*)$", value)
+        if not m:
+            return None
+        pre = m.group(1).lower()
+        t = next((t for t in self.tags if t.lower().startswith(pre) and t.lower() != pre), None)
+        return value + t[len(pre):] if t else None
+
+
 # ── Small dialogs ──
 class Ask(ModalScreen[str | None]):
-    """One line of text (add, edit, search)."""
-    BINDINGS = [Binding("escape", "cancel", "Annuler")]
+    """One line of text (add, edit, search); with tags, @ completes them."""
+    BINDINGS = [Binding("escape", "cancel", "Annuler"), Binding("tab", "complete", show=False, priority=True)]
 
-    def __init__(self, title: str, value: str = "", placeholder: str = ""):
+    def __init__(self, title: str, value: str = "", placeholder: str = "", tags: list[str] | None = None):
         super().__init__()
-        self.title_, self.value, self.placeholder = title, value, placeholder
+        self.title_, self.value, self.placeholder, self.tags = title, value, placeholder, tags
 
     def compose(self) -> ComposeResult:
         with Vertical(classes="dialog"):
             yield Label(self.title_, classes="dlg-title")
-            yield Input(value=self.value, placeholder=self.placeholder)
-            yield Label("Entrée pour valider · Échap pour annuler", classes="dlg-hint")
+            yield Input(value=self.value, placeholder=self.placeholder,
+                        suggester=TagSuggester(self.tags) if self.tags else None)
+            hint = "Entrée pour valider · Échap pour annuler"
+            if self.tags:
+                hint += " · @ puis Tab : tag (les plus utilisés d'abord : " + " ".join("@" + t for t in self.tags[:5]) + ")"
+            yield Label(hint, classes="dlg-hint")
+
+    def action_complete(self) -> None:
+        inp = self.query_one(Input)
+        if inp._suggestion and len(inp._suggestion) > len(inp.value):
+            inp.value = inp._suggestion + " "
+            inp.cursor_position = len(inp.value)
 
     @on(Input.Submitted)
     def done(self, e: Input.Submitted) -> None:
@@ -101,6 +144,70 @@ class Choose(ModalScreen[str | None]):
         self.dismiss(None)
 
 
+class TagPicker(ModalScreen[str | None]):
+    """t: the tags to show, by group, the most used first; type to narrow.
+    Returns the tag, "" for all of them, None when left with Échap."""
+    BINDINGS = [Binding("escape", "cancel", "Annuler")]
+
+    def __init__(self, counts: dict[str, int], current: str | None):
+        super().__init__()
+        self.counts, self.current = counts, current
+
+    def compose(self) -> ComposeResult:
+        with Vertical(classes="dialog"):
+            yield Label("Afficher le tag…", classes="dlg-title")
+            yield Input(placeholder="filtrer…", id="tag-q")
+            yield OptionList(id="tag-list")
+            yield Label("↑↓ puis Entrée · tape pour filtrer · Échap pour annuler", classes="dlg-hint")
+
+    def on_mount(self) -> None:
+        self.fill("")
+
+    def fill(self, q: str) -> None:
+        ol = self.query_one("#tag-list", OptionList)
+        ol.clear_options()
+        q = q.strip().lstrip("@").lower()
+        opts: list[Option] = []
+        if not q:
+            opts.append(Option(("● " if not self.current else "  ") + "tous les tags", id="__all__"))
+        for g in TAG_GROUPS:
+            ts = [(t, n) for t, n in self.counts.items() if tag_group(t) == g and q in t.lower()]
+            if not ts:
+                continue
+            opts.append(Option(Text(g, style="bold dim"), disabled=True))
+            for t, n in ts:
+                mark = "● " if t == self.current else "  "
+                opts.append(Option(Text.assemble(f"{mark}  @{t}", (f"  {n}", "dim")), id=t))
+        ol.add_options(opts)
+        first = next((i for i, o in enumerate(opts) if not o.disabled and (q or o.id == (self.current or "__all__"))), None)
+        if first is not None:
+            ol.highlighted = first
+
+    @on(Input.Changed, "#tag-q")
+    def narrow(self, e: Input.Changed) -> None:
+        self.fill(e.value)
+
+    @on(Input.Submitted, "#tag-q")
+    def take_first(self, e: Input.Submitted) -> None:
+        ol = self.query_one("#tag-list", OptionList)
+        if ol.highlighted is not None:
+            o = ol.get_option_at_index(ol.highlighted)
+            self.dismiss("" if o.id == "__all__" else o.id)
+
+    def on_key(self, e: events.Key) -> None:  # ↑↓ from the filter box move in the list
+        if e.key in ("up", "down") and self.focused is self.query_one("#tag-q"):
+            ol = self.query_one("#tag-list", OptionList)
+            (ol.action_cursor_up if e.key == "up" else ol.action_cursor_down)()
+            e.stop()
+
+    @on(OptionList.OptionSelected, "#tag-list")
+    def picked(self, e: OptionList.OptionSelected) -> None:
+        self.dismiss("" if e.option.id == "__all__" else e.option.id)
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
 class Detail(ModalScreen[None]):
     BINDINGS = [Binding("escape,enter,q", "close", "Fermer")]
 
@@ -121,7 +228,7 @@ HELP = """[b]Se déplacer[/b]  ←→ colonne · ↑↓ carte · Entrée détail
 [b]Déplacer la carte[/b]  ⇧← ⇧→ (ou < >) · 1 À trier · 2 À faire · 3 En cours · 4 Fait
 [b]Écrire[/b]  a ajouter (dans À trier) · e modifier le texte · E ouvrir dans l'éditeur à la ligne
 [b]GitHub[/b]  o ouvrir l'issue · i créer l'issue de la carte · c fermer / rouvrir l'issue · g actualiser
-[b]Filtres[/b]  / chercher · t tag (@v1…) · s section · f cacher « Fait » · w texte complet · Échap tout effacer
+[b]Filtres[/b]  / chercher · t choisir le tag (par groupes : jalons, type, thèmes) · s section · f cacher « Fait » · w texte complet · Échap tout effacer
 [b]Fichier[/b]  rechargé tout seul quand il change · r recharger · q quitter
 [b]Thème[/b]  clair / sombre comme VS Code (suit ses changements) · T basculer à la main
 [b]Claude[/b]  x traiter la carte avec Claude · X traiter « À trier » (Pending) · le tableau revient quand Claude se ferme"""
@@ -448,7 +555,8 @@ class KanbanApp(App):
                 self.board.add(text)
                 self.rebuild((text.strip(), self.board.inbox_section))
                 self.query_one("#list-inbox", OptionList).focus()
-        self.push_screen(Ask("Nouvelle idée (dans « À trier »)", placeholder="texte… (#12 pour une issue, @v1 pour un tag)"), done)
+        self.push_screen(Ask("Nouvelle idée (dans « À trier »)", placeholder="texte… (#12 pour une issue, @v1 pour un tag)",
+                             tags=list(self.board.tag_counts())), done)
 
     def action_edit(self) -> None:
         c = self.current()
@@ -460,7 +568,7 @@ class KanbanApp(App):
             if text and text.strip() and text.strip() != full:
                 if self.guard(self.board.set_text, c, text):
                     self.rebuild()
-        self.push_screen(Ask("Modifier la carte", full), done)
+        self.push_screen(Ask("Modifier la carte", full, tags=list(self.board.tag_counts())), done)
 
     def action_editor(self) -> None:
         c = self.current()
@@ -567,9 +675,13 @@ class KanbanApp(App):
         self.push_screen(Ask("Chercher", self.query_text, "mots…"), done)
 
     def action_cycle_tag(self) -> None:
-        tags = [None] + self.board.tags()
-        self.tag = tags[(tags.index(self.tag) + 1) % len(tags)] if self.tag in tags else None
-        self.rebuild()
+        """t: a menu of the tags, grouped (milestones, kind, themes), most used first."""
+        def done(t):
+            if t is None:
+                return
+            self.tag = t or None
+            self.rebuild()
+        self.push_screen(TagPicker(self.board.tag_counts(), self.tag), done)
 
     def action_cycle_section(self) -> None:
         ss = [None] + self.board.work_sections
