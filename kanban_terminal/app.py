@@ -635,14 +635,16 @@ def find_file(start: str) -> str | None:
 
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(prog="kanban", description="Un fichier Markdown d'idées en Kanban interactif dans le terminal.")
-    ap.add_argument("file", nargs="?", help="fichier Markdown (par défaut : idee.md, ideas.md, TODO.md… du dossier courant)")
+    ap.add_argument("file", nargs="?", help="fichier Markdown, ou dossier où le chercher (par défaut : idee.md, ideas.md, TODO.md… du dossier courant)")
     ap.add_argument("--repo", help="dépôt GitHub propriétaire/nom (par défaut : celui du git du fichier)")
     ap.add_argument("--theme", choices=["auto", "light", "dark"], default=os.environ.get("KANBAN_THEME", "auto"),
                     help="clair, sombre, ou auto : comme le terminal / VS Code / le système (par défaut)")
     a = ap.parse_args(argv)
-    path = a.file or find_file(os.getcwd())
+    path = os.path.expanduser(a.file) if a.file else os.getcwd()
+    if os.path.isdir(path):  # kanban ~/Documents/projet : its idee.md, TODO.md…
+        path = find_file(path)
     if not path or not os.path.exists(path):
-        sys.exit("kanban : aucun fichier trouvé (idee.md, ideas.md, TODO.md…). Donne son chemin : kanban chemin/vers/idees.md")
+        sys.exit("kanban : aucun fichier trouvé (idee.md, ideas.md, TODO.md…). Donne son chemin : kanban chemin/vers/idees.md ou kanban chemin/vers/dossier")
     auto = a.theme == "auto"
     mode = (th.terminal_background() or th.from_settings() or th.DARK) if auto else a.theme
     KanbanApp(path, a.repo, mode, follow=auto).run()
