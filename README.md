@@ -4,20 +4,20 @@ Un fichier Markdown d'idées affiché en **tableau Kanban interactif dans le ter
 
 Le fichier reste la source : chaque action modifie la ligne de la carte (et rien d'autre), et le tableau se recharge tout seul quand le fichier change, par exemple quand tu l'édites dans VS Code en même temps.
 
-```
- À trier 4            │ À faire 11              │ En cours 3                │ Fait 30
-▌ui 1. si la carte… @v1│▌faire une page de… #9 @v2│▌integrer un ta… #51✓ #53✓│▌toggle type mode… @v1
-▌ui 2. ne jamais p… @v1│▌donner acces aux… #10 @v2│▌à voir dans le … #71✓    │▌timer pour pass… #54✓
-Idées › conjugaison  l.24  integrer un tableau de conjugaison avec les radicaux…
-```
+![Le tableau Kanban dans un terminal](docs/board.png)
 
 ## Installation
 
+Il faut Python 3.10 ou plus.
+
 ```sh
-pipx install -e ~/Documents/kanban-terminal     # la commande « kanban » partout
+git clone https://github.com/antoine123456/kanban-terminal.git
+pipx install -e kanban-terminal          # la commande « kanban » partout
 # ou, sans pipx :
-cd ~/Documents/kanban-terminal && python3 -m venv .venv && .venv/bin/pip install -e .
+cd kanban-terminal && python3 -m venv .venv && .venv/bin/pip install -e .
 ```
+
+Pour les issues GitHub (touches **o i c g**), installer aussi [`gh`](https://cli.github.com) et lancer `gh auth login` une fois.
 
 ## Utilisation
 
