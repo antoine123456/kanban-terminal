@@ -48,6 +48,11 @@ class GanttTest(unittest.TestCase):
         head = gt.render(p, 100, color=False, now=now)[0]
         self.assertIn("10m ahead", head)  # progress 4 slots = 20m, clock 10m
 
+    def test_phase_names_from_tag_descriptions(self):
+        legend = "\n".join(gt.render(self.plan(PLAN.replace("- unit: 5 min", "- unit: 5 min\n- @volet2: second part")), 120, color=False))
+        self.assertIn("■ second part", legend)       # described
+        self.assertIn("■ Work", legend)              # not described: its section
+
     def test_no_text_in_bars_and_width(self):
         for w in (50, 80, 160):
             lines = gt.render(self.plan(), w, color=False)

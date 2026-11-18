@@ -886,7 +886,8 @@ class KanbanApp(App):
         self.shown_tests = order
         for c in order:
             sign, style = {"failure": ("✗", "red"), "error": ("!", "red"), "skipped": ("–", "yellow")}.get(c.status, ("✓", "green"))
-            line = Text.assemble((f"{sign} ", style), (c.title, "" if c.bad else MUTED), (f"  {c.time:.2f}s", MUTED))
+            # the name keeps the normal colour: grey on the selection bar can't be read
+            line = Text.assemble((f"{sign} ", style), (c.title, "bold" if c.bad else ""), (f"  {c.time:.2f}s", MUTED))
             ol.add_option(Option(line))
         if not order and res.output:
             self.query_one("#tests-trace", Static).update(Text(res.output[-3000:], style=MUTED))

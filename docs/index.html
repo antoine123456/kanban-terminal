@@ -1,0 +1,693 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>kanban-terminal · démo</title>
+<meta name="description" content="Essayer kanban-terminal dans le navigateur : un fichier Markdown d'idées en tableau Kanban, avec les mêmes touches que dans le terminal.">
+<style>
+:root {
+  --bg: #fbfbfa; --fg: #24292f; --muted: #8a8f98; --line: #d0d4da; --accent: #9b59b6;
+  --sel-bg: #4f8ff7; --sel-fg: #ffffff; --panel: #f0f1f3; --chip: #2a8fa8; --ok: #2e9e6a; --warn: #c99a06;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #1e1f22; --fg: #d8dadf; --muted: #7d828c; --line: #3a3d44; --accent: #c678dd;
+    --sel-bg: #3d6fd1; --sel-fg: #ffffff; --panel: #26282c; --chip: #56b6c2; --ok: #6cc08b; --warn: #e5c07b;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #1e1f22; --fg: #d8dadf; --muted: #7d828c; --line: #3a3d44; --accent: #c678dd;
+  --sel-bg: #3d6fd1; --sel-fg: #ffffff; --panel: #26282c; --chip: #56b6c2; --ok: #6cc08b; --warn: #e5c07b;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: var(--bg); color: var(--fg);
+  font: 14px/1.45 ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace;
+  display: flex; flex-direction: column; min-height: 100vh;
+}
+a { color: inherit; }
+header.top { display: flex; align-items: center; gap: 12px; padding: 8px 16px 4px; flex-wrap: wrap; }
+header.top h1 { font-size: 14px; margin: 0; font-weight: 700; }
+header.top .sub { color: var(--muted); }
+header.top .links { margin-left: auto; display: flex; gap: 14px; }
+header.top .links a { color: var(--muted); text-decoration: none; }
+header.top .links a:hover { color: var(--fg); text-decoration: underline; }
+main { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 34%); gap: 12px; padding: 4px 16px 0; min-height: 0; }
+.term { display: flex; flex-direction: column; min-height: 0; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.bar { padding: 2px 8px; color: var(--muted); background: var(--panel); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.board { flex: 1; display: grid; grid-template-columns: repeat(var(--ncols, 4), minmax(0, 1fr)); gap: 6px; padding: 6px; min-height: 340px; }
+.col { border: 1px solid var(--line); border-radius: 6px; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.col.focus { border-color: var(--accent); }
+.col.hidden { display: none; }
+.col h2 { font-size: 14px; margin: 0; padding: 2px 8px; color: var(--muted); font-weight: 700; }
+.col ul { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; }
+.card { padding: 0 6px 0 0; display: flex; gap: 0; cursor: pointer; white-space: nowrap; overflow: hidden; }
+.card .txt { overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
+.wrap .card { white-space: normal; }
+.wrap .card .txt { white-space: normal; }
+.card .b { flex: none; width: 0.6em; margin-right: 0.4em; }
+.card .tag { font-weight: 700; }
+.card .chip { color: var(--chip); }
+.card .n { color: var(--muted); }
+.card.done .t { color: var(--muted); }
+.card.later, .card.later .tag { color: var(--muted); font-style: italic; }
+.col.focus .card.sel { background: var(--sel-bg); color: var(--sel-fg); }
+.col.focus .card.sel .t, .col.focus .card.sel .n, .col.focus .card.sel .chip { color: var(--sel-fg); }
+.col:not(.focus) .card.sel { background: color-mix(in srgb, var(--sel-bg) 18%, transparent); }
+.detail { padding: 2px 8px; min-height: 1.45em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.detail .sec { font-weight: 700; }
+.detail .m { color: var(--muted); }
+.keys { padding: 2px 8px 4px; color: var(--fg); display: flex; flex-wrap: wrap; gap: 0 14px; }
+.keys b { color: var(--accent); }
+.side { display: flex; flex-direction: column; min-height: 0; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.side .bar { display: flex; gap: 10px; align-items: center; }
+.side .bar span { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.side textarea {
+  flex: 1; min-height: 260px; resize: none; border: 0; outline: none; padding: 8px; margin: 0;
+  background: var(--bg); color: var(--fg); font: inherit; font-size: 13px; line-height: 1.45; tab-size: 2;
+}
+.side textarea.flash { animation: flash 0.6s; }
+@keyframes flash { from { background: color-mix(in srgb, var(--warn) 22%, var(--bg)); } to { background: var(--bg); } }
+button, .btn {
+  font: inherit; color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 4px;
+  padding: 1px 8px; cursor: pointer;
+}
+button:hover, .btn:hover { border-color: var(--accent); }
+.drop { position: fixed; inset: 0; background: color-mix(in srgb, var(--accent) 18%, transparent); border: 3px dashed var(--accent);
+  display: none; align-items: center; justify-content: center; font-size: 18px; z-index: 30; pointer-events: none; }
+.drop.on { display: flex; }
+footer.note { color: var(--muted); padding: 6px 16px 10px; font-size: 12px; }
+/* phone buttons */
+.pad { display: none; padding: 6px; gap: 6px; flex-wrap: wrap; border-top: 1px solid var(--line); }
+.pad button { min-width: 44px; min-height: 40px; font-size: 15px; }
+body.touch .pad { display: flex; }
+/* dialogs */
+.modal { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,.25); z-index: 20; padding: 16px; }
+.modal.on { display: flex; }
+.dlg { background: var(--bg); border: 1px solid var(--accent); border-radius: 6px; width: min(720px, 100%); max-height: 86vh; display: flex; flex-direction: column; padding: 6px 10px 8px; }
+.dlg h3 { font-size: 14px; margin: 2px 0 8px; }
+.dlg input { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; width: 100%; outline: none; }
+.dlg input:focus { border-color: var(--accent); }
+.dlg input::placeholder { color: var(--muted); }
+.dlg .hint { color: var(--muted); margin-top: 6px; font-size: 12px; }
+.dlg ul { list-style: none; margin: 6px 0 0; padding: 0; overflow-y: auto; }
+.dlg li { padding: 0 6px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dlg li.grp { color: var(--muted); font-weight: 700; cursor: default; }
+.dlg li.sel { background: var(--sel-bg); color: var(--sel-fg); }
+.dlg li.sel .m, .dlg li.sel b { color: var(--sel-fg) !important; }
+.dlg .m { color: var(--muted); }
+.dlg pre { margin: 0; white-space: pre-wrap; font: inherit; overflow-y: auto; }
+.toast { position: fixed; right: 16px; bottom: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; z-index: 40; opacity: 0; transition: opacity .2s; max-width: calc(100% - 32px); }
+.toast.on { opacity: 1; }
+@media (max-width: 900px) {
+  main { grid-template-columns: minmax(0, 1fr); }
+  .side textarea { min-height: 220px; }
+}
+@media (max-width: 640px) {
+  header.top, main, footer.note { padding-left: 16px; padding-right: 16px; }
+  .board { grid-template-columns: minmax(0, 1fr); min-height: 0; flex: none; }   /* natural height: the page scrolls */
+  .term, .col { min-height: auto; }
+  main { flex: none; min-height: auto; }
+  .term { overflow: visible; min-width: 0; }
+  .col ul { flex: none; max-height: 30vh; }   /* stacked: no height to fill, the list sets it */
+  .col ul:empty { min-height: 1.45em; }
+  .keys { display: none; }
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>kanban-terminal</h1>
+  <span class="sub">démo · un fichier Markdown d'idées en tableau Kanban</span>
+  <nav class="links">
+    <a href="https://github.com/antoine123456/kanban-terminal">dépôt ↗</a>
+    <a href="https://antoine123456.github.io/">← antoine123456</a>
+  </nav>
+</header>
+<main>
+  <section class="term" aria-label="Tableau">
+    <div class="bar" id="bar"></div>
+    <div class="board" id="board"></div>
+    <div class="detail" id="detail"></div>
+    <div class="keys" id="keys"></div>
+    <div class="pad" id="pad" aria-label="Touches">
+      <button data-k="ArrowLeft" aria-label="colonne à gauche">←</button>
+      <button data-k="ArrowUp" aria-label="carte au-dessus">↑</button>
+      <button data-k="ArrowDown" aria-label="carte en dessous">↓</button>
+      <button data-k="ArrowRight" aria-label="colonne à droite">→</button>
+      <button data-k="<" aria-label="déplacer à gauche">⇧←</button>
+      <button data-k=">" aria-label="déplacer à droite">⇧→</button>
+      <button data-k="Enter">détail</button>
+      <button data-k="a">a ajouter</button>
+      <button data-k="e">e modifier</button>
+      <button data-k="t">t tag</button>
+      <button data-k="/">/ chercher</button>
+      <button data-k="f">f Fait</button>
+      <button data-k="Escape">Échap</button>
+      <button data-k="?">?</button>
+    </div>
+  </section>
+  <section class="side" aria-label="Le fichier Markdown">
+    <div class="bar"><span id="fname">idee.md — le fichier reste la source</span>
+      <button id="open" title="Ouvrir un .md">ouvrir</button>
+      <button id="save" title="Télécharger le fichier">télécharger</button>
+      <button id="reset" title="Revenir à l'exemple">exemple</button>
+    </div>
+    <textarea id="md" spellcheck="false" aria-label="Contenu du fichier Markdown"></textarea>
+  </section>
+</main>
+<footer class="note">Tout reste dans ton navigateur (localStorage). Glisse un fichier .md sur la page pour l'ouvrir. Dans le terminal : <code>pipx install -e kanban-terminal</code> puis <code>kanban idee.md</code>.</footer>
+<input type="file" id="file" accept=".md,.markdown,.txt,text/markdown,text/plain" hidden>
+<div class="drop" id="drop">Lâche le fichier .md ici</div>
+<div class="modal" id="modal"><div class="dlg" id="dlg" role="dialog" aria-modal="true"></div></div>
+<div class="toast" id="toast" role="status"></div>
+<script>
+"use strict";
+// ───────────────────────── Sample file ─────────────────────────
+const SAMPLE = `# Idées — appli de recettes
+
+## Règles
+- Un exemple : déplace les cartes, modifie le texte à droite, le tableau suit.
+- @v1: première version publique
+- @v2: après les retours des premiers utilisateurs
+- @plus-tard: mis de côté, hors des filtres
+- @bug: quelque chose ne marche pas
+- @ui: l'interface
+- @recherche: la recherche et les filtres
+- @idée: pas encore planifiée
+
+## Idées
+- [X] liste des recettes avec une photo @v1 @ui
+- [_] recherche par ingrédient (#14) @v1 @recherche
+  - tolérer les pluriels : « tomate » trouve « tomates »
+  - chercher aussi dans les étapes ?
+- [ ] mode cuisine : l'écran ne s'éteint pas pendant la recette @v1
+- [ ] liste de courses à partir de plusieurs recettes (#21) @v2
+partage:
+- [ ] partager une recette par un lien @v2
+- [ ] imprimer une recette sur une seule page @v2 @ui
+- [ ] importer depuis un site de recettes @v2 @plus-tard
+
+## Correction
+- [X] les quantités ne suivent pas le nombre de parts (#9) @v1 @bug
+- [_] le clavier cache le champ de recherche sur téléphone @v1 @bug @ui
+- [ ] les accents sont mal triés (« éclair » après « zeste ») @v2 @bug @recherche
+
+## Pending
+- [idée] un minuteur dans chaque étape
+- [ui] un mode sombre
+- convertir les unités (tasses → grammes)
+`;
+
+// ───────────────────────── Model: a port of model.py ─────────────────────────
+const COLUMNS = [["inbox", "À trier"], ["todo", "À faire"], ["doing", "En cours"], ["done", "Fait"]];
+const COL_NAMES = Object.fromEntries(COLUMNS);
+const MARK_OF = { todo: " ", doing: "_", done: "X" };
+const COL_OF_MARK = { " ": "todo", "_": "doing", "x": "done", "X": "done" };
+const INBOX_NAMES = new Set(["pending", "inbox", "à trier", "a trier", "à classer", "todo inbox"]);
+const SKIP_NAMES = new Set(["règles", "regles", "rules"]);
+const ITEM = /^- (?:\[([^\]]{1,12})\]\s*)?(.*)$/;
+const TAG = /(?<!\S)@([\p{L}\p{N}_-]+)/gu;           // Python's \w is Unicode: @idée
+const ISSUE = /#(\d+)/g;
+const TAG_INFO = /^- @([\p{L}\p{N}_-]+)\s*(?::|—|=)\s*(.+)$/u;
+const LATER = "plus-tard";
+
+const isInbox = s => !!s && INBOX_NAMES.has(s.trim().toLowerCase());
+const tagsIn = s => [...s.matchAll(TAG)].map(m => m[1]);
+const stripTags = s => s.replace(TAG, "");
+
+function parse(lines) {
+  const cards = [], sections = [];
+  let section = null, group = null, card = null, last = null;
+  lines.forEach((line, n) => {
+    if (line.startsWith("## ")) {
+      section = line.slice(3).trim(); sections.push(section);
+      group = card = last = null; return;
+    }
+    if (section === null || SKIP_NAMES.has(section.trim().toLowerCase())) return;
+    if (!line.trim()) { card = group = null; return; }
+    const m = line.match(ITEM);
+    if (m && m[1] === undefined && !isInbox(section) && last) { last.notes.push(m[2]); return; }
+    if (m) {
+      const mark = m[1] === undefined ? null : m[1], body = m[2];
+      const col = isInbox(section) ? "inbox" : (mark === null ? "todo" : (COL_OF_MARK[mark] || "inbox"));
+      card = { line: n, raw: line, section, col, mark, group, text: stripTags(body).trim(), tags: tagsIn(body), notes: [], noteLines: 0 };
+      cards.push(card); last = card;
+    } else if (/^[ \t]/.test(line) && card) {
+      card.notes.push(line.trim().replace(/^[- ]+/, "")); card.noteLines++;
+    } else if (/^[^-#].*:\s*$/.test(line)) {
+      group = line.trim().replace(/:\s*$/, "").trim(); card = null;
+    } else if (card) {
+      card.notes.push(line.trim());
+    }
+  });
+  return { cards, sections };
+}
+
+function tagDescriptions(lines) {
+  const info = {}; let section = null;
+  for (const line of lines) {
+    if (line.startsWith("## ")) section = line.slice(3).trim().toLowerCase();
+    else if (SKIP_NAMES.has(section)) { const m = line.trim().match(TAG_INFO); if (m) info[m[1]] = m[2].trim(); }
+  }
+  return info;
+}
+
+const customMark = c => (c.mark && !(c.mark in COL_OF_MARK)) ? c.mark : null;
+const issuesOf = c => [...new Set([...(c.raw + " " + c.notes.join(" ")).matchAll(ISSUE)].map(m => m[1]))];
+const composeLine = (mark, text) => mark !== null ? `- [${mark}] ${text}` : `- ${text}`;
+
+function sectionEnd(lines, name) {
+  const start = lines.findIndex(l => l.startsWith("## ") && l.slice(3).trim() === name);
+  if (start < 0) return null;
+  let end = lines.findIndex((l, i) => i > start && l.startsWith("## ")); if (end < 0) end = lines.length;
+  let last = start;
+  for (let i = start + 1; i < end; i++) if (lines[i].trim()) last = i;
+  return last + 1;
+}
+
+class Board {
+  constructor(text) { this.load(text); }
+  load(text) {
+    this.text = text;
+    const lines = text.split("\n");
+    ({ cards: this.cards, sections: this.sections } = parse(lines));
+    this.tagInfo = tagDescriptions(lines);
+  }
+  get workSections() { return this.sections.filter(s => !isInbox(s) && !SKIP_NAMES.has(s.trim().toLowerCase())); }
+  get inboxSection() { return this.sections.find(isInbox) || null; }
+  tags() { return [...new Set(this.cards.flatMap(c => c.tags))].sort(); }
+  tagCounts() {
+    const n = {};
+    for (const c of this.cards) for (const t of c.tags) n[t] = (n[t] || 0) + 1;
+    return Object.fromEntries(Object.entries(n).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])));
+  }
+  _locate(lines, card) {
+    if (card.line < lines.length && lines[card.line] === card.raw) return card.line;
+    const hits = lines.map((l, i) => l === card.raw ? i : -1).filter(i => i >= 0);
+    if (!hits.length) throw new Error("Carte introuvable : le fichier a changé, rechargé.");
+    return hits.reduce((a, b) => Math.abs(b - card.line) < Math.abs(a - card.line) ? b : a);
+  }
+  _block(lines, i) {
+    let n = 1;
+    while (i + n < lines.length && /^[ \t]/.test(lines[i + n]) && lines[i + n].trim()) n++;
+    return n;
+  }
+  _write(lines) { this.load(lines.join("\n")); }
+  setText(card, text) {
+    const lines = this.text.split("\n"), i = this._locate(lines, card);
+    lines[i] = composeLine(card.mark, text.trim()); this._write(lines);
+  }
+  move(card, col, section = null) {
+    const lines = this.text.split("\n"), i = this._locate(lines, card);
+    const m = lines[i].match(ITEM);
+    let mark = m ? (m[1] === undefined ? null : m[1]) : null, rest = m ? m[2] : lines[i].slice(2);
+    if (mark && !(mark in COL_OF_MARK)) rest = tagsIn(rest).includes(mark) ? rest : `${rest} @${mark}`;   // [ui] → @ui
+    let target, line;
+    if (col === "inbox") { target = this.inboxSection; line = `- ${rest}`; }
+    else { line = composeLine(MARK_OF[col], rest); target = isInbox(card.section) ? section : null; }
+    if (!target || target === card.section) { lines[i] = line; this._write(lines); return; }
+    const n = this._block(lines, i), block = [line, ...lines.slice(i + 1, i + n)];
+    lines.splice(i, n);
+    const at = sectionEnd(lines, target);
+    if (at === null) throw new Error(`Section « ${target} » introuvable.`);
+    lines.splice(at, 0, ...block); this._write(lines);
+  }
+  add(text, section = null) {
+    const lines = this.text.split("\n"), target = section || this.inboxSection;
+    const line = isInbox(target) ? `- ${text.trim()}` : composeLine(" ", text);
+    const at = target ? sectionEnd(lines, target) : null;
+    if (at === null) { if (!target) lines.push("", "## Pending", "", line); else lines.push(line); }
+    else lines.splice(at, 0, line);
+    this._write(lines);
+  }
+}
+
+// ───────────────────────── Colours: as in app.py ─────────────────────────
+const SECTION_COLORS = ["#4f8ff7", "#f25f5c", "#b48ead", "#56b6c2", "#e5c07b"];
+const INBOX_COLOR = "#d7a700";
+const PHASE_COLORS = ["#4f8ff7", "#3fa45b", "#c065c9", "#2aa6b8", "#c99a06", "#e05561"]; // blue green magenta cyan yellow red
+const TYPE_COLORS = { bug: "#e05561", feature: "#3fa45b", "idée": INBOX_COLOR, idee: INBOX_COLOR, question: INBOX_COLOR, ui: "#c065c9", doc: "#2aa6b8", perf: "#d19a66" };
+const THEME_COLORS = ["#4f8ff7", "#c678dd", "#56b6c2", "#2e9e6a", "#d19a66", "#e06c75", "#b48ead", "#d7a700"];
+const MILESTONE = /^(?:v|volet|phase)(\d+)$/i;
+const TYPE_TAGS = new Set(["bug", "feature", "idée", "idee", "question", "ui", "doc", "perf"]);
+const TAG_GROUPS = ["Jalons", "Type", "Thèmes"];
+
+const CRC = (() => { const t = []; for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(s) { let c = 0xFFFFFFFF; for (const b of new TextEncoder().encode(s)) c = CRC[(c ^ b) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+
+function tagColor(tag) {
+  const t = tag.toLowerCase(), m = t.match(MILESTONE);
+  if (m) return PHASE_COLORS[(parseInt(m[1], 10) - 1) % PHASE_COLORS.length];
+  if (t === LATER) return "#777777";
+  return TYPE_COLORS[t] || THEME_COLORS[crc32(t) % THEME_COLORS.length];
+}
+function tagGroup(tag) {
+  const t = tag.toLowerCase();
+  if (/^(v\d+|volet\d+)$/.test(t) || t === LATER) return "Jalons";
+  return TYPE_TAGS.has(t) ? "Type" : "Thèmes";
+}
+
+// ───────────────────────── State ─────────────────────────
+const STORE = "kanban-terminal-demo:file";
+function stored() { try { return localStorage.getItem(STORE); } catch { return null; } }
+function store(text) { try { localStorage.setItem(STORE, text); } catch { /* private window: fine */ } }
+
+const board = new Board(stored() || SAMPLE);
+const S = { col: "todo", hl: { inbox: 0, todo: 0, doing: 0, done: 0 }, tag: null, section: null, query: "", hideDone: false, wrap: false, shown: {}, armed: null };
+let fileName = "idee.md";
+
+const $ = id => document.getElementById(id);
+const md = $("md");
+const esc = s => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+// ───────────────────────── Board → screen ─────────────────────────
+function sectionColor(section) {
+  if (isInbox(section)) return INBOX_COLOR;
+  const ws = board.workSections, i = ws.indexOf(section);
+  return i >= 0 ? SECTION_COLORS[i % SECTION_COLORS.length] : "#888888";
+}
+const tagsOf = c => c.tags.includes(LATER) ? [LATER] : c.tags;
+function barColor(c) {
+  if (c.tags.includes(LATER)) return "#777777";
+  const m = c.tags.find(t => MILESTONE.test(t));
+  return m ? tagColor(m) : sectionColor(c.section);
+}
+function labelTags(c) {
+  const tags = c.tags.includes(LATER) ? [LATER] : c.tags.filter(t => !MILESTONE.test(t));
+  const cm = customMark(c);
+  if (cm && !tags.includes(cm)) tags.unshift(cm);
+  return tags;
+}
+function tagInfo() {
+  const info = { ...board.tagInfo };
+  for (const t of board.tags()) {
+    if (!(t in info) && tagGroup(t) === "Jalons" && t !== LATER) {
+      const secs = new Set(board.cards.filter(c => c.tags.includes(t) && !isInbox(c.section)).map(c => c.section));
+      if (secs.size === 1) info[t] = [...secs][0];
+    }
+  }
+  return info;
+}
+function visible(c) {
+  if (S.tag && !tagsOf(c).includes(S.tag)) return false;
+  if (S.section && c.section !== S.section && !isInbox(c.section)) return false;
+  if (S.query) {
+    const hay = (c.text + " " + c.notes.join(" ") + " " + c.tags.join(" ") + " " + (c.group || "")).toLowerCase();
+    return S.query.toLowerCase().split(/\s+/).filter(Boolean).every(w => hay.includes(w));
+  }
+  return true;
+}
+function cardHTML(c) {
+  const later = c.tags.includes(LATER);
+  let h = `<span class="b" style="background:${barColor(c)}"></span><span class="txt">`;
+  for (const t of labelTags(c)) h += `<span class="tag" style="color:${later ? "" : tagColor(t)}">${esc(t)}</span> `;
+  h += `<span class="t">${esc(c.text.replace(/\s*\(#\d+\)/g, ""))}</span>`;
+  h += `</span>`;
+  let tail = "";
+  for (const n of issuesOf(c)) tail += ` <span class="chip">#${n}</span>`;
+  if (c.notes.length) tail += ` <span class="n">+${c.notes.length}</span>`;
+  return h + (tail ? `<span style="flex:none">${tail}</span>` : "");
+}
+const keyOf = c => c ? c.text + "\u0000" + c.section : null;
+
+function currentCard() { const cs = S.shown[S.col] || []; return cs[S.hl[S.col]] || null; }
+
+function render(keep) {
+  keep = keep === undefined ? keyOf(currentCard()) : keep;
+  const el = $("board");
+  const cols = COLUMNS.filter(([k]) => !(k === "done" && S.hideDone));
+  el.style.setProperty("--ncols", cols.length);
+  if (S.hideDone && S.col === "done") S.col = "doing";
+  let html = "";
+  for (const [key, name] of COLUMNS) {
+    const cards = board.cards.filter(c => c.col === key && visible(c));
+    S.shown[key] = cards;
+    const idx = keep ? cards.findIndex(c => keyOf(c) === keep) : -1;
+    if (idx >= 0) S.hl[key] = idx;
+    S.hl[key] = Math.max(0, Math.min(S.hl[key], cards.length - 1));
+    const total = board.cards.filter(c => c.col === key).length;
+    html += `<div class="col${key === S.col ? " focus" : ""}${key === "done" && S.hideDone ? " hidden" : ""}" data-col="${key}">`;
+    html += `<h2>${name}  ${cards.length}${cards.length !== total ? "/" + total : ""}</h2><ul>`;
+    cards.forEach((c, i) => {
+      const cls = ["card", i === S.hl[key] ? "sel" : "", c.col === "done" ? "done" : "", c.tags.includes(LATER) ? "later" : ""].filter(Boolean).join(" ");
+      html += `<li class="${cls}" data-col="${key}" data-i="${i}">${cardHTML(c)}</li>`;
+    });
+    html += `</ul></div>`;
+  }
+  el.innerHTML = html;
+  el.classList.toggle("wrap", S.wrap);
+  const sel = el.querySelector(".col.focus .card.sel");
+  if (sel) sel.scrollIntoView({ block: "nearest" });
+  updateBar(); updateDetail();
+}
+
+function updateBar() {
+  const f = [];
+  if (S.tag) f.push("@" + S.tag);
+  if (S.section) f.push("section " + S.section);
+  if (S.query) f.push(`« ${S.query} »`);
+  if (S.hideDone) f.push("sans Fait");
+  $("bar").textContent = fileName + "  ·  démo dans le navigateur" + (f.length ? "   filtres : " + f.join(", ") + " (Échap)" : "   ? aide");
+}
+function updateDetail() {
+  const c = currentCard(), d = $("detail");
+  if (!c) { d.innerHTML = `<span class="m">—</span>`; return; }
+  d.innerHTML = `<span class="sec" style="color:${sectionColor(c.section)}">${esc(c.section)}</span>` +
+    (c.group ? `<span class="m"> › ${esc(c.group)}</span>` : "") +
+    `<span class="m">  l.${c.line + 1}  </span>${esc(c.text)}`;
+}
+const KEYS = [["⇧←→", "déplacer"], ["a", "ajouter"], ["e", "modifier"], ["/", "chercher"], ["t", "tag"], ["s", "section"], ["f", "Fait"], ["w", "texte"], ["T", "thème"], ["?", "aide"]];
+$("keys").innerHTML = KEYS.map(([k, v]) => `<span><b>${k}</b> ${v}</span>`).join("");
+
+// ───────────────────────── The file pane ─────────────────────────
+function syncFile(flash) {
+  if (md.value !== board.text) {
+    const top = md.scrollTop; md.value = board.text; md.scrollTop = top;
+    if (flash) { md.classList.remove("flash"); void md.offsetWidth; md.classList.add("flash"); }
+  }
+  store(board.text);
+}
+let typing = null;
+md.addEventListener("input", () => {
+  clearTimeout(typing);
+  typing = setTimeout(() => { board.load(md.value); store(md.value); render(); }, 150);
+});
+
+function change(fn, keepCard) {
+  try { fn(); } catch (e) { toast(e.message); board.load(board.text); }
+  syncFile(true);
+  render(keepCard);
+}
+
+// ───────────────────────── Actions (same keys as the TUI) ─────────────────────────
+const colKeys = () => COLUMNS.map(([k]) => k).filter(k => !(k === "done" && S.hideDone));
+function actCol(step) { const ks = colKeys(); const i = ks.indexOf(S.col); S.col = ks[(i + step + ks.length) % ks.length]; render(null); }
+function actRow(step) {
+  const cs = S.shown[S.col] || []; if (!cs.length) return;
+  S.hl[S.col] = Math.max(0, Math.min(cs.length - 1, S.hl[S.col] + step)); render(null);
+}
+function actMove(step) {
+  const c = currentCard(); if (!c) return;
+  const ks = COLUMNS.map(([k]) => k), i = ks.indexOf(c.col) + step;
+  if (i >= 0 && i < ks.length) actMoveTo(ks[i]);
+}
+function actMoveTo(col) {
+  const c = currentCard(); if (!c || c.col === col) return;
+  if (isInbox(c.section) && col !== "inbox") {
+    const ws = board.workSections;
+    if (ws.length === 1) return doMove(c, col, ws[0]);
+    return choose(`Dans quelle section ? « ${c.text.slice(0, 60)} »`, ws, s => s && doMove(c, col, s));
+  }
+  doMove(c, col, null);
+}
+function doMove(c, col, section) {
+  const key = keyOf(c), sec = section || (col === "inbox" ? board.inboxSection : c.section);
+  change(() => board.move(c, col, section), c.text + "\u0000" + sec);
+  S.col = col === "done" && S.hideDone ? S.col : col;
+  render(c.text + "\u0000" + sec);
+}
+function actAdd() {
+  ask("Nouvelle idée (dans « À trier »)", "", "texte… (#12 pour une issue, @v1 pour un tag)", text => {
+    if (text && text.trim()) { change(() => board.add(text)); S.col = "inbox"; render(stripTags(text).trim() + "\u0000" + board.inboxSection); }
+  }, true);
+}
+function actEdit() {
+  const c = currentCard(); if (!c) return;
+  const full = c.text + c.tags.map(t => " @" + t).join("");
+  ask("Modifier la carte", full, "", text => {
+    if (text && text.trim() && text.trim() !== full) change(() => board.setText(c, text), stripTags(text).trim() + "\u0000" + c.section);
+  }, true);
+}
+function actSearch() { ask("Chercher", S.query, "mots…", t => { if (t !== null) { S.query = t.trim(); render(); } }); }
+function actSection() { const ss = [null, ...board.workSections]; const i = ss.indexOf(S.section); S.section = ss[(i + 1) % ss.length]; render(); }
+function actDone() { S.hideDone = !S.hideDone; render(); }
+function actClear() { S.query = ""; S.tag = null; S.section = null; S.hideDone = false; render(); }
+function actWrap() { S.wrap = !S.wrap; render(); }
+function actTheme() {
+  const cur = document.documentElement.dataset.theme || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  document.documentElement.dataset.theme = cur === "dark" ? "light" : "dark";
+}
+function actDetail() {
+  const c = currentCard(); if (!c) return;
+  const info = tagInfo();
+  let h = `<h3 style="color:${sectionColor(c.section)}">${COL_NAMES[c.col]} · ${esc(c.section)}${c.group ? ` <span class="m">› ${esc(c.group)}</span>` : ""} <span class="m">ligne ${c.line + 1}</span></h3><pre>${esc(c.text)}\n\n`;
+  const tags = [...c.tags]; const cm = customMark(c); if (cm && !tags.includes(cm)) tags.push(cm);
+  for (const t of tags) h += `<b style="color:${tagColor(t)}">@${esc(t)}</b><span class="m">${info[t] ? "  " + esc(info[t]) : ""}</span>\n`;
+  for (const n of c.notes) h += `<span class="m">  • ${esc(n)}</span>\n`;
+  for (const n of issuesOf(c)) h += `\n<span style="color:var(--chip)">#${n}</span> <span class="m">issue GitHub (dans le terminal : o l'ouvre)</span>`;
+  h += `</pre><div class="hint">Échap ou Entrée pour fermer</div>`;
+  showModal(h, { close: true });
+}
+const HELP = `<h3>Aide — les mêmes touches que dans le terminal</h3><pre><b>Se déplacer</b>  ←→ colonne · ↑↓ carte (ou h j k l) · Entrée détail · clic : sélectionner, re-clic : détail
+<b>Déplacer la carte</b>  ⇧← ⇧→ (ou &lt; &gt;) · 1 À trier · 2 À faire · 3 En cours · 4 Fait
+<b>Écrire</b>  a ajouter (dans À trier) · e modifier le texte · ou directement dans le fichier à droite
+<b>Filtres</b>  / chercher · t tag (par groupes : jalons, type, thèmes) · s section · f cacher « Fait » · w texte complet · Échap tout effacer
+<b>Tags</b>  @v1, @v2… colorent la barre de gauche · les autres s'écrivent en gras avant le texte · leur sens : « - @tag: description » dans Règles
+<b>Fichier</b>  il reste la source : chaque action change sa ligne, et rien d'autre · glisser-déposer un .md pour l'ouvrir
+<b>Thème</b>  clair / sombre comme le système · T basculer
+
+<span class="m">Seulement dans le terminal : o i c g (issues GitHub), x X (Claude Code), G (Gantt), U (tests), E (éditeur).</span></pre><div class="hint">Échap pour fermer</div>`;
+const TERMINAL_ONLY = { o: "issues GitHub", i: "issues GitHub", c: "issues GitHub", g: "issues GitHub", x: "Claude Code", X: "Claude Code", G: "la vue Gantt", U: "la vue Tests", E: "l'éditeur" };
+
+// ───────────────────────── Dialogs ─────────────────────────
+let modal = null;
+function showModal(html, opts = {}) {
+  $("dlg").innerHTML = html; $("modal").classList.add("on"); modal = opts;
+}
+function closeModal(v) {
+  const m = modal; $("modal").classList.remove("on"); modal = null;
+  if (m && m.done) m.done(v);
+}
+$("modal").addEventListener("mousedown", e => { if (e.target.id === "modal") closeModal(null); });
+
+function ask(title, value, placeholder, done, tags) {
+  showModal(`<h3>${esc(title)}</h3><input id="ask" autocomplete="off"><div class="hint">Entrée pour valider · Échap pour annuler${tags ? " · @ puis Tab : tag (" + Object.keys(board.tagCounts()).slice(0, 5).map(t => "@" + esc(t)).join(" ") + ")" : ""}</div>`, { done, ask: true, tags });
+  const i = $("ask"); i.value = value; i.placeholder = placeholder; i.focus(); i.setSelectionRange(i.value.length, i.value.length);
+}
+function choose(title, choices, done) {
+  showModal(`<h3>${esc(title)}</h3><ul id="ch">${choices.map((c, i) => `<li data-v="${esc(c)}"${i === 0 ? ' class="sel"' : ""}>${esc(c)}</li>`).join("")}</ul><div class="hint">↑↓ puis Entrée · Échap pour annuler</div>`, { done, list: "ch" });
+}
+function tagPicker() {
+  showModal(`<h3>Afficher le tag…</h3><input id="tq" placeholder="filtrer…" autocomplete="off"><ul id="tl"></ul><div class="hint">↑↓ puis Entrée · tape pour filtrer · Échap pour annuler</div>`,
+    { list: "tl", done: v => { if (v !== null && v !== undefined) { S.tag = v === "__all__" ? null : v; render(); } } });
+  const fill = () => {
+    const q = $("tq").value.trim().replace(/^@/, "").toLowerCase(), counts = board.tagCounts(), info = tagInfo();
+    let h = q ? "" : `<li data-v="__all__">${S.tag ? "  " : "● "}tous les tags</li>`;
+    for (const g of TAG_GROUPS) {
+      let ts = Object.entries(counts).filter(([t]) => tagGroup(t) === g && t.toLowerCase().includes(q));
+      if (g === "Jalons") ts.sort((a, b) => { const n = t => { const m = t.match(MILESTONE); return m ? +m[1] : 1e6; }; return n(a[0]) - n(b[0]) || a[0].localeCompare(b[0]); });
+      if (!ts.length) continue;
+      h += `<li class="grp">${g}</li>`;
+      for (const [t, n] of ts) h += `<li data-v="${esc(t)}">${t === S.tag ? "● " : "  "}  <b style="color:${tagColor(t)}">@${esc(t)}</b><span class="m">  ${n}${info[t] ? "  " + esc(info[t]) : ""}</span></li>`;
+    }
+    $("tl").innerHTML = h;
+    const items = [...$("tl").querySelectorAll("li:not(.grp)")];
+    const cur = items.find(li => li.dataset.v === (S.tag || "__all__"));
+    (q ? items[0] : cur || items[0])?.classList.add("sel");
+  };
+  $("tq").addEventListener("input", fill); fill(); $("tq").focus();
+}
+function listMove(id, step) {
+  const items = [...$(id).querySelectorAll("li:not(.grp)")]; if (!items.length) return;
+  let i = items.findIndex(li => li.classList.contains("sel"));
+  items.forEach(li => li.classList.remove("sel"));
+  i = Math.max(0, Math.min(items.length - 1, (i < 0 ? 0 : i + step)));
+  items[i].classList.add("sel"); items[i].scrollIntoView({ block: "nearest" });
+}
+$("dlg").addEventListener("click", e => {
+  const li = e.target.closest("li"); if (!li || li.classList.contains("grp") || !modal || !modal.list) return;
+  closeModal(li.dataset.v);
+});
+
+function modalKey(e) {
+  const m = modal;
+  if (e.key === "Escape") { e.preventDefault(); return closeModal(null); }
+  if (m.close && (e.key === "Enter" || e.key === "q")) { e.preventDefault(); return closeModal(null); }
+  if (m.list && (e.key === "ArrowDown" || e.key === "ArrowUp")) { e.preventDefault(); return listMove(m.list, e.key === "ArrowDown" ? 1 : -1); }
+  if (m.list && e.key === "Enter") { e.preventDefault(); const s = $(m.list).querySelector("li.sel"); return closeModal(s ? s.dataset.v : null); }
+  if (m.ask && e.key === "Enter") { e.preventDefault(); return closeModal($("ask").value); }
+  if (m.ask && m.tags && e.key === "Tab") {        // @ then Tab: the most used tag starting that way
+    e.preventDefault();
+    const i = $("ask"), mm = i.value.match(/@([\p{L}\p{N}_-]*)$/u); if (!mm) return;
+    const pre = mm[1].toLowerCase(), t = Object.keys(board.tagCounts()).find(t => t.toLowerCase().startsWith(pre) && t.toLowerCase() !== pre);
+    if (t) i.value = i.value + t.slice(pre.length) + " ";
+  }
+}
+
+// ───────────────────────── Keys ─────────────────────────
+function onKey(e) {
+  if (modal) return modalKey(e);
+  if (e.target === md || e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = e.key, map = {
+    ArrowLeft: () => e.shiftKey ? actMove(-1) : actCol(-1), ArrowRight: () => e.shiftKey ? actMove(1) : actCol(1),
+    h: () => actCol(-1), l: () => actCol(1), ArrowUp: () => actRow(-1), ArrowDown: () => actRow(1), k: () => actRow(-1), j: () => actRow(1),
+    "<": () => actMove(-1), ">": () => actMove(1),
+    "1": () => actMoveTo("inbox"), "2": () => actMoveTo("todo"), "3": () => actMoveTo("doing"), "4": () => actMoveTo("done"),
+    a: actAdd, e: actEdit, "/": actSearch, t: tagPicker, s: actSection, f: actDone, w: actWrap, Escape: actClear,
+    Enter: actDetail, "?": () => showModal(HELP, { close: true }), T: actTheme, r: () => { board.load(board.text); render(); toast(fileName + " rechargé"); },
+  };
+  if (map[k]) { e.preventDefault(); map[k](); }
+  else if (TERMINAL_ONLY[k]) { e.preventDefault(); toast(`${k} : ${TERMINAL_ONLY[k]}, seulement dans le terminal`); }
+}
+document.addEventListener("keydown", onKey);
+
+// click: select, click again: detail (like the TUI)
+$("board").addEventListener("click", e => {
+  const li = e.target.closest(".card"), col = e.target.closest(".col");
+  if (!col) return;
+  if (!li) { S.col = col.dataset.col; return render(null); }
+  const same = S.col === li.dataset.col && S.hl[S.col] === +li.dataset.i;
+  S.col = li.dataset.col; S.hl[S.col] = +li.dataset.i; render(null);
+  if (same) actDetail();
+});
+// phone buttons → the same keys
+$("pad").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  const k = b.dataset.k;
+  onKey({ key: k, shiftKey: false, target: document.body, preventDefault() {}, metaKey: false, ctrlKey: false, altKey: false });
+});
+function detectTouch() {
+  const touch = matchMedia("(pointer: coarse)").matches && !matchMedia("(pointer: fine)").matches;
+  document.body.classList.toggle("touch", touch || innerWidth <= 640);
+}
+detectTouch(); addEventListener("resize", detectTouch);
+
+// ───────────────────────── Files: open, drop, download, reset ─────────────────────────
+function openText(text, name) {
+  board.load(text.replace(/\r\n/g, "\n")); fileName = name || "idee.md";
+  $("fname").textContent = fileName + " — le fichier reste la source";
+  S.tag = S.section = null; S.query = ""; S.col = "todo"; S.hl = { inbox: 0, todo: 0, doing: 0, done: 0 };
+  syncFile(true); render(null); toast(`${fileName} ouvert`);
+}
+function readFile(f) {
+  if (!f) return;
+  if (f.size > 2e6) return toast("Fichier trop gros pour la démo (plus de 2 Mo)");
+  f.text().then(t => openText(t, f.name));
+}
+$("open").onclick = () => $("file").click();
+$("file").onchange = e => { readFile(e.target.files[0]); e.target.value = ""; };
+$("save").onclick = () => {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([board.text], { type: "text/markdown" })); a.download = fileName; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+};
+$("reset").onclick = () => openText(SAMPLE, "idee.md");
+let drag = 0;
+addEventListener("dragenter", e => { if (e.dataTransfer?.types?.includes("Files")) { drag++; $("drop").classList.add("on"); } });
+addEventListener("dragleave", () => { if (--drag <= 0) { drag = 0; $("drop").classList.remove("on"); } });
+addEventListener("dragover", e => e.preventDefault());
+addEventListener("drop", e => { e.preventDefault(); drag = 0; $("drop").classList.remove("on"); readFile(e.dataTransfer.files[0]); });
+
+let toastT = null;
+function toast(msg) { const t = $("toast"); t.textContent = msg; t.classList.add("on"); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove("on"), 2200); }
+
+// ───────────────────────── Start ─────────────────────────
+md.value = board.text;
+render(null);
+window.kanbanDemo = { board, S, SAMPLE };   // for the tests
+</script>
+</body>
+</html>

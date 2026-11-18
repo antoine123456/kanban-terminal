@@ -1,10 +1,12 @@
 # kanban-terminal
 
+**[Essayer en ligne →](https://antoine123456.github.io/kanban-terminal/)** — le tableau dans le navigateur, sans rien installer : mêmes touches, et le fichier Markdown à côté.
+
 Un fichier Markdown d'idées affiché en **tableau Kanban interactif dans le terminal**, assez compact pour le panneau du bas de VS Code.
 
 Le fichier reste la source : chaque action modifie la ligne de la carte (et rien d'autre), et le tableau se recharge tout seul quand le fichier change, par exemple quand tu l'édites dans VS Code en même temps.
 
-![Le tableau Kanban dans un terminal](docs/board.png)
+![Le tableau dans un terminal : déplacer une carte, ranger une idée, le menu des tags, le Gantt (G), les tests (U)](docs/demo.gif)
 
 ## Installation
 

@@ -33,7 +33,7 @@ import re
 import shutil
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 ITEM = re.compile(r"^- (?:\[(?P<mark>[^\]]{1,12})\]\s*)?(?P<body>.*)$")
@@ -44,6 +44,7 @@ UNIT = re.compile(r"unit:\s*(\d+(?:\.\d+)?)\s*(\w+)")
 AGENTS = re.compile(r"agents:\s*(.+)$")
 START = re.compile(r"start:\s*(\d{4}-\d{2}-\d{2}[ T]\d{1,2}:\d{2})")
 RULES = {"rules", "règles", "regles"}
+TAG_INFO = re.compile(r"^- @([\w-]+)\s*(?::|—|=)\s*(.+)$")
 
 # 16-colour palette: reads on light and dark terminals alike, and in Textual.
 PHASE_COLORS = ["34", "32", "35", "36", "33", "31"]   # blue green magenta cyan yellow red
@@ -78,6 +79,7 @@ class Plan:
     tasks: list[Task]
     unit: tuple[float, str] | None
     started: datetime | None = None
+    tag_info: dict[str, str] = field(default_factory=dict)   # « - @v1: first release » in Rules
 
     @property
     def end(self) -> float:
@@ -101,6 +103,7 @@ class Plan:
 
 def parse(lines: list[str]) -> Plan:
     title, section, unit, started = "", "", None, None
+    info: dict[str, str] = {}
     lanes: list[str] = []
     cards: list[tuple[str, str, str, list[str], list[str]]] = []  # mark, text, section, tags, notes
     for line in lines:
@@ -115,6 +118,8 @@ def parse(lines: list[str]) -> Plan:
                 unit = (float(m.group(1)), m.group(2))
             if m := START.search(line):
                 started = datetime.fromisoformat(m.group(1).replace(" ", "T"))
+            if m := TAG_INFO.match(line.strip()):
+                info[m.group(1)] = m.group(2).strip()
         elif (m := ITEM.match(line)):
             body = m.group("body")
             cards.append((m.group("mark") or "", TAG.sub("", body).strip(), section, TAG.findall(body), []))
@@ -135,7 +140,7 @@ def parse(lines: list[str]) -> Plan:
                           at if status == "doing" else 0.0))
     used = [l for l in lanes if any(t.lane == l for t in tasks)]
     used += [t.lane for t in tasks if t.lane not in used]
-    return Plan(title, list(dict.fromkeys(used)), tasks, unit, started)
+    return Plan(title, list(dict.fromkeys(used)), tasks, unit, started, info)
 
 
 def load(path: str) -> Plan:
@@ -300,9 +305,13 @@ def render(plan: Plan, cols: int, *, by: str = "agent", sim: float | None = None
     lines.append(text("parallel".ljust(label_w), "90") + with_cursor(load) + text(f" max {peak}", "90"))
 
     # legend, wrapped to the width
+    # a phase is named by its tag's description (« - @v1: first release »), else its first card's section
     names: dict[int, str] = {}
     for t in plan.tasks:
         names.setdefault(t.phase, t.section)
+    for tag, desc in plan.tag_info.items():
+        if (m := PHASE.fullmatch(tag)) and int(m.group(1)) in names:
+            names[int(m.group(1))] = desc
     lines.append([])
     row: list[Cell] = []
     for p in sorted(n for n in names if n):
