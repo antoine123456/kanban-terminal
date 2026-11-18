@@ -29,6 +29,7 @@ SKIP_NAMES = {"règles", "regles", "rules"}
 
 ITEM = re.compile(r"^- (?:\[(?P<mark>[^\]]{1,12})\]\s*)?(?P<body>.*)$")
 TAG = re.compile(r"(?<!\S)@([\w-]+)")
+TAG_INFO = re.compile(r"^- @([\w-]+)\s*(?::|—|=)\s*(.+)$")   # « - @idée: pas encore triée » in Rules
 ISSUE = re.compile(r"#(\d+)")
 
 
@@ -63,6 +64,7 @@ class Board:
         self.path = os.path.abspath(path)
         self.cards: list[Card] = []
         self.sections: list[str] = []
+        self.tag_info: dict[str, str] = {}
         self.mtime = 0.0
         self.load()
 
@@ -73,7 +75,9 @@ class Board:
 
     def load(self) -> None:
         self.mtime = os.path.getmtime(self.path)
-        self.cards, self.sections = parse(self.read_lines())
+        lines = self.read_lines()
+        self.cards, self.sections = parse(lines)
+        self.tag_info = tag_descriptions(lines)
 
     def changed_on_disk(self) -> bool:
         try:
@@ -198,6 +202,17 @@ def section_end(lines: list[str], name: str) -> int | None:
         if lines[i].strip():
             last = i
     return last + 1
+
+
+def tag_descriptions(lines: list[str]) -> dict[str, str]:
+    """What each tag means, written in the Rules section: « - @volet1: Prepare »."""
+    info, section = {}, None
+    for line in lines:
+        if line.startswith("## "):
+            section = line[3:].strip().lower()
+        elif section in SKIP_NAMES and (m := TAG_INFO.match(line.strip())):
+            info[m.group(1)] = m.group(2).strip()
+    return info
 
 
 def parse(lines: list[str]) -> tuple[list[Card], list[str]]:

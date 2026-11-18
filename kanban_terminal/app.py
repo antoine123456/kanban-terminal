@@ -10,6 +10,7 @@ import subprocess
 import sys
 import time
 import webbrowser
+import zlib
 
 from rich.text import Text
 from textual import events, on, work
@@ -22,6 +23,7 @@ from textual.widgets import Footer, Input, Label, OptionList, Static
 from textual.widgets.option_list import Option
 
 from . import gantt as gt
+from . import junit
 from . import theme as th
 from .gh import GitHub, milestone_tag, tag_milestone
 from .model import COLUMNS, Board, Card, is_inbox
@@ -63,6 +65,25 @@ class CardList(OptionList):
 # ── Tags: groups and completion ──
 TYPE_TAGS = {"bug", "feature", "idée", "idee", "question", "ui", "doc", "perf"}
 TAG_GROUPS = ["Jalons", "Type", "Thèmes"]
+
+
+# Milestones colour the card's left bar, like the Gantt's phases (same order);
+# the other tags are a bold coloured word before the text.
+PHASE_COLORS = ["blue", "green", "magenta", "cyan", "yellow", "red"]
+TYPE_COLORS = {"bug": "red", "feature": "green", "idée": INBOX_COLOR, "idee": INBOX_COLOR,
+               "question": INBOX_COLOR, "ui": "magenta", "doc": "cyan", "perf": "#d19a66"}
+THEME_COLORS = ["#4f8ff7", "#c678dd", "#56b6c2", "#2e9e6a", "#d19a66", "#e06c75", "#b48ead", "#d7a700"]
+MILESTONE = re.compile(r"(?:v|volet|phase)(\d+)$", re.I)
+
+
+def tag_color(tag: str) -> str:
+    """Always the same colour for a tag (between runs too)."""
+    t = tag.lower()
+    if m := MILESTONE.fullmatch(t):
+        return PHASE_COLORS[(int(m.group(1)) - 1) % len(PHASE_COLORS)]
+    if t == LATER:
+        return "#777777"
+    return TYPE_COLORS.get(t) or THEME_COLORS[zlib.crc32(t.encode()) % len(THEME_COLORS)]
 
 
 def tag_group(tag: str) -> str:
@@ -151,9 +172,9 @@ class TagPicker(ModalScreen[str | None]):
     Returns the tag, "" for all of them, None when left with Échap."""
     BINDINGS = [Binding("escape", "cancel", "Annuler")]
 
-    def __init__(self, counts: dict[str, int], current: str | None):
+    def __init__(self, counts: dict[str, int], current: str | None, info: dict[str, str] | None = None):
         super().__init__()
-        self.counts, self.current = counts, current
+        self.counts, self.current, self.info = counts, current, info or {}
 
     def compose(self) -> ComposeResult:
         with Vertical(classes="dialog"):
@@ -174,12 +195,15 @@ class TagPicker(ModalScreen[str | None]):
             opts.append(Option(("● " if not self.current else "  ") + "tous les tags", id="__all__"))
         for g in TAG_GROUPS:
             ts = [(t, n) for t, n in self.counts.items() if tag_group(t) == g and q in t.lower()]
+            if g == "Jalons":   # in their order (@v1, @v2… / @volet1, @volet2…), not by use
+                ts.sort(key=lambda tn: (int(m.group(1)) if (m := MILESTONE.fullmatch(tn[0].lower())) else 10**6, tn[0]))
             if not ts:
                 continue
             opts.append(Option(Text(g, style=f"bold {MUTED}"), disabled=True))
             for t, n in ts:
                 mark = "● " if t == self.current else "  "
-                opts.append(Option(Text.assemble(f"{mark}  @{t}", (f"  {n}", MUTED)), id=t))
+                opts.append(Option(Text.assemble(f"{mark}  ", (f"@{t}", f"bold {tag_color(t)}"), (f"  {n}", MUTED),
+                                                 (f"  {self.info[t]}" if t in self.info else "", MUTED)), id=t))
         ol.add_options(opts)
         first = next((i for i, o in enumerate(opts) if not o.disabled and (q or o.id == (self.current or "__all__"))), None)
         if first is not None:
@@ -230,8 +254,10 @@ HELP = """[b]Se déplacer[/b]  ←→ colonne · ↑↓ carte · Entrée détail
 [b]Déplacer la carte[/b]  ⇧← ⇧→ (ou < >) · 1 À trier · 2 À faire · 3 En cours · 4 Fait
 [b]Écrire[/b]  a ajouter (dans À trier) · e modifier le texte · E ouvrir dans l'éditeur à la ligne
 [b]GitHub[/b]  o ouvrir l'issue · i créer l'issue de la carte · c fermer / rouvrir l'issue · g actualiser
+[b]Tags[/b]  @volet1, @v2… colorent la barre de gauche · les autres s'écrivent en gras, en couleur, avant le texte · leur sens : « - @tag: description » dans Règles (montré par t et Entrée)
 [b]Filtres[/b]  / chercher · t choisir le tag (par groupes : jalons, type, thèmes) · s section · f cacher « Fait » · w texte complet · Échap tout effacer
-[b]Gantt[/b]  G : tableau → Gantt par agent → par tâche → tableau · notes « gantt: a-b », lignes agents: / unit: / start: dans Règles · ligne rouge = où on en est
+[b]Gantt[/b]  G : tableau → Gantt par agent → par tâche → tableau · notes « gantt: a-b », lignes agents: / unit: / start: dans Règles · ligne rouge = avancement (cartes cochées, notes « at: 60% »), ┊ = horloge
+[b]Tests[/b]  U : la barre verte / rouge façon JUnit (pytest, unittest, Maven, Gradle) · ↑↓ un test → sa trace · r relancer · commande : tests
 [b]Fichier[/b]  rechargé tout seul quand il change · r recharger · q quitter
 [b]Thème[/b]  clair / sombre comme VS Code (suit ses changements) · T basculer à la main
 [b]Claude[/b]  x traiter la carte avec Claude · X traiter « À trier » (Pending) · le tableau revient quand Claude se ferme"""
@@ -241,24 +267,36 @@ class KanbanApp(App):
     TITLE = "kanban"
     CSS = """
     Screen { layout: vertical; }
-    #bar { height: 1; padding: 0 1; background: $panel; color: $text-muted; }
+    #bar { height: 1; padding: 0 1; background: $panel; color: $muted; }
     #board { height: 1fr; }
     .col { width: 1fr; height: 1fr; border: round $panel-lighten-2; padding: 0; }
     .col:focus-within { border: round $accent; }
     .col.hidden { display: none; }
-    .col-title { height: 1; padding: 0 1; text-style: bold; color: $text-muted; }
+    .col-title { height: 1; padding: 0 1; text-style: bold; color: $muted; }
     .col OptionList { height: 1fr; border: none; padding: 0; background: transparent; scrollbar-size-vertical: 1; }
     .col OptionList:focus { border: none; }
     #gantt { height: 1fr; padding: 0 1; display: none; overflow-y: auto; }
     .gantt-view #gantt { display: block; }
     .gantt-view #board, .gantt-view #detail { display: none; }
+    #tests { height: 1fr; display: none; padding: 0 1; }
+    .tests-view #tests { display: block; }
+    .tests-view #board, .tests-view #detail { display: none; }
+    #tests-head { height: auto; }
+    #tests-list { height: 1fr; border: none; padding: 0; background: transparent; }
+    #tests-trace { height: auto; max-height: 45%; overflow-y: auto; padding: 0 0 0 2; }
+    /* ANSI themes turn « 50% » colours into the dim attribute (black boxes in
+       VS Code) and draw a list's selection invisible when the focus is elsewhere. */
+    Input > .input--placeholder, Input > .input--suggestion { color: $muted; text-style: none; }
+    .dialog OptionList > .option-list--option-highlighted, #tests-list > .option-list--option-highlighted {
+        color: $block-cursor-foreground; background: $block-cursor-background; text-style: bold;
+    }
     #detail { height: auto; max-height: 3; padding: 0 1; color: $text; background: $boost; }
     ModalScreen { align: center middle; }
     .dialog { width: 70%; max-width: 100; height: auto; max-height: 90%; border: round $accent; background: $surface; padding: 0 1; }
     .dialog.wide { width: 90%; max-width: 140; }
     .dialog OptionList { height: auto; max-height: 12; border: none; }
     .dlg-title { text-style: bold; padding: 0 0 1 0; }
-    .dlg-hint { color: $text-muted; }
+    .dlg-hint { color: $muted; }
     """
     BINDINGS = [
         Binding("left,h", "col(-1)", "←", show=False),
@@ -272,10 +310,14 @@ class KanbanApp(App):
         Binding("slash", "search", "chercher"), Binding("t", "cycle_tag", "tag"), Binding("s", "cycle_section", show=False),
         Binding("f", "toggle_done", show=False), Binding("w", "toggle_wrap", show=False), Binding("escape", "clear_filters", show=False),
         Binding("g", "refresh_gh", show=False), Binding("T", "toggle_mode", show=False), Binding("r", "reload", show=False),
-        Binding("G", "toggle_gantt", "gantt"),
+        Binding("G", "toggle_gantt", "gantt"), Binding("U", "toggle_tests", "tests"),
         Binding("x", "claude", "claude"), Binding("X", "claude_inbox", show=False),
         Binding("question_mark", "help", "aide"), Binding("q", "quit", "quitter"),
     ]
+
+    def get_theme_variable_defaults(self) -> dict[str, str]:
+        """$muted: the terminal's grey, never a « 50% » colour (see CSS)."""
+        return {**super().get_theme_variable_defaults(), "muted": "ansi_bright_black"}
 
     def __init__(self, path: str, repo: str | None = None, mode: str = th.DARK, follow: bool = True):
         super().__init__()
@@ -291,6 +333,9 @@ class KanbanApp(App):
         self.wrap = False
         self.shown: dict[str, list[Card]] = {}
         self.gantt_by: str | None = None   # None: the board · "agent" / "task": the Gantt view
+        self.test_view = False             # U: the JUnit-style test view
+        self.tests: junit.Result | None = None
+        self.tests_running = False
 
     # ── layout ──
     def compose(self) -> ComposeResult:
@@ -301,11 +346,18 @@ class KanbanApp(App):
                     yield Label(name, classes="col-title", id=f"title-{key}")
                     yield CardList(id=f"list-{key}")
         yield Static(id="gantt")
+        with Vertical(id="tests"):
+            yield Static(id="tests-head")
+            yield OptionList(id="tests-list")
+            yield Static(id="tests-trace")
         yield Static(id="detail")
         yield Footer()
 
     def on_resize(self) -> None:
         self.call_after_refresh(self.rebuild)
+        if self.test_view:   # the bar follows the width
+            self.call_after_refresh(lambda: self.query_one("#tests-head", Static).update(
+                self.test_head(max(self.query_one("#tests-head", Static).size.width, 20))))
 
     def on_mount(self) -> None:
         self.apply_mode()
@@ -343,6 +395,33 @@ class KanbanApp(App):
         ws = self.board.work_sections
         return SECTION_COLORS[ws.index(section) % len(SECTION_COLORS)] if section in ws else "#888888"
 
+    def tag_info(self) -> dict[str, str]:
+        """The descriptions of the Rules section; a milestone without one is
+        named after the section that holds all its cards (@volet1 → « 1 · Prepare »)."""
+        info = dict(self.board.tag_info)
+        for t in self.board.tags():
+            if t not in info and tag_group(t) == "Jalons" and t != LATER:
+                secs = {c.section for c in self.board.cards if t in c.tags and not is_inbox(c.section)}
+                if len(secs) == 1:
+                    info[t] = secs.pop()
+        return info
+
+    def bar_color(self, c: Card) -> str:
+        """The left bar: the card's milestone, else its section."""
+        if LATER in c.tags:
+            return "#777777"
+        m = next((t for t in c.tags if MILESTONE.fullmatch(t.lower())), None)
+        return tag_color(m) if m else self.section_color(c.section)
+
+    @staticmethod
+    def label_tags(c: Card) -> list[str]:
+        """The tags written before the text: all but the milestones (they colour
+        the bar). The inbox mark [idée] and the tag @idée look the same."""
+        tags = [LATER] if LATER in c.tags else [t for t in c.tags if not MILESTONE.fullmatch(t.lower())]
+        if c.custom_mark and c.custom_mark not in tags:
+            tags.insert(0, c.custom_mark)
+        return tags
+
     @staticmethod
     def tags_of(c: Card) -> list[str]:
         """@plus-tard wins over the other tags: the card is put aside, whatever
@@ -362,16 +441,14 @@ class KanbanApp(App):
     def card_text(self, c: Card, width: int = 0) -> Text:
         head = Text()
         later = LATER in c.tags  # put aside: the whole card goes quiet
-        head.append("▌", style="#777777" if later else self.section_color(c.section))
-        if c.custom_mark:
-            head.append(f"{c.custom_mark} ", style=f"bold {INBOX_COLOR}")
+        head.append("▌", style=self.bar_color(c))
+        for tg in self.label_tags(c):
+            head.append(f"{tg} ", style=f"{MUTED} italic" if later else f"bold {tag_color(tg)}")
         body = Text(re.sub(r"\s*\(#\d+\)", "", c.text), style=f"{MUTED} italic" if later else MUTED if c.col == "done" else "")  # the issue is a chip
         tail = Text()
         for n in c.issues:
             st = self.gh.state(n)
             tail.append(f" #{n}{'✓' if st == 'closed' else ''}", style=MUTED if later else "green" if st == "closed" else "cyan")
-        for tg in self.tags_of(c):
-            tail.append(f" @{tg}", style=MUTED if later else "magenta")
         if c.notes:
             tail.append(f" +{len(c.notes)}", style=MUTED)
         # One line per card by default (a short bottom panel shows more), w
@@ -692,7 +769,7 @@ class KanbanApp(App):
                 return
             self.tag = t or None
             self.rebuild()
-        self.push_screen(TagPicker(self.board.tag_counts(), self.tag), done)
+        self.push_screen(TagPicker(self.board.tag_counts(), self.tag, self.tag_info()), done)
 
     def action_cycle_section(self) -> None:
         ss = [None] + self.board.work_sections
@@ -718,18 +795,24 @@ class KanbanApp(App):
         self.load_issues()
 
     def action_reload(self) -> None:
-        self.reload(quiet=False)
+        if self.test_view:
+            self.run_tests()
+        else:
+            self.reload(quiet=False)
 
     # ── Gantt view (gantt.py): the same file, who works when ──
-    GANTT_KEYS = {"toggle_gantt", "quit", "help", "toggle_mode", "reload", "command_palette"}
+    VIEW_KEYS = {"toggle_gantt", "toggle_tests", "quit", "help", "toggle_mode", "reload", "command_palette"}
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
-        """In the Gantt view the cards are hidden: no key acts on them."""
-        return action in self.GANTT_KEYS if self.gantt_by else True
+        """In the Gantt and test views the cards are hidden: no key acts on them."""
+        return action in self.VIEW_KEYS if (self.gantt_by or self.test_view) else True
 
     def action_toggle_gantt(self) -> None:
         """G: board → Gantt by agent → Gantt by task → board."""
         self.gantt_by = {None: "agent", "agent": "task"}.get(self.gantt_by)
+        if self.test_view:
+            self.gantt_by, self.test_view = "agent", False
+            self.screen.set_class(False, "tests-view")
         self.screen.set_class(bool(self.gantt_by), "gantt-view")
         if not self.gantt_by:
             self.query_one(f"#list-{self.focused_col()}", OptionList).focus()
@@ -747,6 +830,93 @@ class KanbanApp(App):
         width = max((w.size.width or self.size.width) - 2, 40)
         w.update(Text.from_ansi("\n".join(gt.render(plan, width, by=self.gantt_by))))
 
+    # ── Test view (junit.py): the JUnit bar, green or red ──
+    def action_toggle_tests(self) -> None:
+        """U: the test view and back. The first time, the tests run."""
+        self.test_view = not self.test_view
+        if self.test_view and self.gantt_by:
+            self.gantt_by = None
+            self.screen.set_class(False, "gantt-view")
+        self.screen.set_class(self.test_view, "tests-view")
+        if self.test_view:
+            self.query_one("#tests-list", OptionList).focus()
+            if self.tests is None and not self.tests_running:
+                self.run_tests()
+        else:
+            self.query_one(f"#list-{self.focused_col()}", OptionList).focus()
+        self.refresh_bindings()
+        self.draw_tests()
+
+    @work(thread=True, exclusive=True, group="tests")
+    def run_tests(self) -> None:
+        self.tests_running = True
+        self.call_from_thread(self.draw_tests)
+        res = junit.run(junit.project_root(self.board.path))
+        self.tests, self.tests_running = res, False
+        self.call_from_thread(self.draw_tests)
+
+    def test_head(self, width: int) -> Text:
+        res = self.tests
+        t = Text()
+        if self.tests_running or res is None:
+            t.append(f"{os.path.basename(junit.project_root(self.board.path))} · tests en cours…\n", style="bold")
+            t.append("█" * min(width, 40) + "\n", style="yellow")
+            return t.append(" ", style=MUTED)
+        t.append(res.command + "\n", style="bold")
+        t.append("█" * junit.bar_width(res, width) + "\n", style="green" if res.ok else "red")
+        t.append(junit.summary(res))
+        if res.problem:
+            t.append("\n" + res.problem, style="red")
+        return t
+
+    def draw_tests(self) -> None:
+        if not self.test_view:
+            return
+        head = self.query_one("#tests-head", Static)
+        width = max((head.size.width or self.size.width - 2), 20)
+        head.update(self.test_head(width))
+        ol = self.query_one("#tests-list", OptionList)
+        ol.clear_options()
+        res = self.tests
+        if res is None or self.tests_running:
+            self.query_one("#tests-trace", Static).update("")
+            return
+        # failures first (the JUnit "Failures" tab), then the others, quieter
+        order = res.failures + [c for c in res.cases if not c.bad]
+        self.shown_tests = order
+        for c in order:
+            sign, style = {"failure": ("✗", "red"), "error": ("!", "red"), "skipped": ("–", "yellow")}.get(c.status, ("✓", "green"))
+            line = Text.assemble((f"{sign} ", style), (c.title, "" if c.bad else MUTED), (f"  {c.time:.2f}s", MUTED))
+            ol.add_option(Option(line))
+        if not order and res.output:
+            self.query_one("#tests-trace", Static).update(Text(res.output[-3000:], style=MUTED))
+        elif order:
+            ol.highlighted = 0
+            self.show_trace(0)
+
+    def show_trace(self, i: int | None) -> None:
+        tests = getattr(self, "shown_tests", [])
+        w = self.query_one("#tests-trace", Static)
+        if i is None or i >= len(tests):
+            w.update("")
+            return
+        c = tests[i]
+        if not c.bad and c.status != "skipped":
+            w.update(Text(f"{c.title} · ok", style=MUTED))
+            return
+        t = Text()
+        t.append((c.message or c.status) + "\n", style="bold red" if c.bad else "yellow")
+        root = junit.project_root(self.board.path)
+        detail = c.detail
+        for r in {root, os.path.realpath(root)}:   # paths relative to the project
+            detail = detail.replace(r + os.sep, "")
+        t.append(detail, style=MUTED)
+        w.update(t)
+
+    @on(OptionList.OptionHighlighted, "#tests-list")
+    def _test_highlighted(self, event: OptionList.OptionHighlighted) -> None:
+        self.show_trace(event.option_index)
+
     def action_help(self) -> None:
         self.push_screen(Detail(Text.from_markup(HELP)))
 
@@ -760,8 +930,10 @@ class KanbanApp(App):
             t.append(f" › {c.group}", style=MUTED)
         t.append(f"   ligne {c.line + 1}\n\n", style=MUTED)
         t.append(c.text + "\n")
-        for tg in self.tags_of(c):
-            t.append(f"@{tg} ", style="magenta")
+        info = self.tag_info()
+        for tg in c.tags + ([c.custom_mark] if c.custom_mark and c.custom_mark not in c.tags else []):
+            t.append(f"@{tg}", style=f"bold {tag_color(tg)}")
+            t.append(f"  {info[tg]}\n" if tg in info else "\n", style=MUTED)
         if c.notes:
             t.append("\n")
             for n in c.notes:
@@ -796,7 +968,7 @@ def main(argv: list[str] | None = None) -> None:
     if not path or not os.path.exists(path):
         sys.exit("kanban : aucun fichier trouvé (idee.md, ideas.md, TODO.md…). Donne son chemin : kanban chemin/vers/idees.md ou kanban chemin/vers/dossier")
     auto = a.theme == "auto"
-    mode = (th.terminal_background() or th.from_settings() or th.DARK) if auto else a.theme
+    mode = th.detect() if auto else a.theme
     KanbanApp(path, a.repo, mode, follow=auto).run()
 
 

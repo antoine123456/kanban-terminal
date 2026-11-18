@@ -10,13 +10,17 @@ On top of the kanban format (see model.py), a few lines:
     - [ ] a task @volet1 @lead     @volet… = phase (colour), agent tag = lane
       - gantt: 2-5                 slots 2 to 5
 
-Cards without a ``gantt:`` note are not drawn. ``[x]`` cards are drawn solid,
-``[_]`` bold with ▒, ``[ ]`` with ░.
+      - at: 60%                    optional marker: how far the card in progress is
 
-The red line is where we are. With ``start:`` it is the clock (time since
-start), and the header says how far ahead or behind the plan is: the plan's
-progress is the point up to which every card is done. Without ``start:`` the
-line is that progress point.
+Cards without a ``gantt:`` note are not drawn. Three shades of the phase's
+colour: █ done, ▒ in progress, ░ to do (a card in progress is █ up to its
+``at:`` marker).
+
+The red line ┃ is the progress, and only markers move it: a card ticked
+[_] or [x], an ``at:`` note changed. It stands where the first unfinished
+card is: at its start, or at its ``at:`` marker. Everything left of it is
+done. With ``start:``, a grey line ┊ is the clock, and the header says how
+far ahead or behind the work is.
 
 Used by the kanban (key G) and by the ``gantt`` command (``--play`` replays
 the plan: the line sweeps the timeline and fills the bars).
@@ -44,6 +48,8 @@ RULES = {"rules", "règles", "regles"}
 # 16-colour palette: reads on light and dark terminals alike, and in Textual.
 PHASE_COLORS = ["34", "32", "35", "36", "33", "31"]   # blue green magenta cyan yellow red
 CURSOR = "1;31"
+CLOCK = "90"           # the terminal's grey
+AT = re.compile(r"(?:at|progress):\s*(\d+(?:\.\d+)?)\s*%")
 HUMAN = {"you", "moi", "toi", "me", "human"}
 
 
@@ -56,6 +62,13 @@ class Task:
     start: float
     end: float
     status: str  # todo · doing · done
+    at: float = 0.0  # 0..1, the « at: 60% » marker of a card in progress
+
+    def reached(self) -> float:
+        """How far this card has gone, in slots."""
+        if self.status == "done":
+            return self.end
+        return self.start + self.at * (self.end - self.start)
 
 
 @dataclass
@@ -71,11 +84,9 @@ class Plan:
         return max((t.end for t in self.tasks), default=0)
 
     def progress(self) -> float:
-        """Up to where the plan is done: every card ends before this point
-        or is finished; a card in progress counts for half."""
-        left = [t.start if t.status == "todo" else (t.start + t.end) / 2
-                for t in self.tasks if t.status != "done"]
-        return min(left, default=self.end)
+        """Up to where the plan is done: the first unfinished card, at its
+        start or at its « at: » marker. Moves only when the file changes."""
+        return min((t.reached() for t in self.tasks if t.status != "done"), default=self.end)
 
     def clock(self, now: datetime | None = None) -> float | None:
         """Slots elapsed since ``start:``, if the unit is a duration."""
@@ -119,7 +130,9 @@ def parse(lines: list[str]) -> Plan:
         others = [t for t in tags if not PHASE.match(t)]
         lane = next((t for t in others if t in lanes), others[0] if others else "?")
         status = {"x": "done", "X": "done", "_": "doing"}.get(mark, "todo")
-        tasks.append(Task(text, sec, lane, phase, float(slot.group(1)), float(slot.group(2)), status))
+        at = next((min(float(m.group(1)), 100) / 100 for n in notes if (m := AT.search(n))), 0.0)
+        tasks.append(Task(text, sec, lane, phase, float(slot.group(1)), float(slot.group(2)), status,
+                          at if status == "doing" else 0.0))
     used = [l for l in lanes if any(t.lane == l for t in tasks)]
     used += [t.lane for t in tasks if t.lane not in used]
     return Plan(title, list(dict.fromkeys(used)), tasks, unit, started)
@@ -167,19 +180,17 @@ def phase_color(task: Task) -> str:
 
 
 def bar(task: Task, width: int, sim: float | None) -> list[Cell]:
-    """One bar, its label inside. ``sim``: replay time (--play), the bar fills
-    up to it whatever the card's status."""
+    """One bar, no text: █ done, ▒ in progress, ░ to do, in the phase's colour.
+    ``sim``: replay time (--play), the bar fills up to it."""
     col = phase_color(task)
-    label = fit(("◆ " if task.lane in HUMAN else "") + short(task.text), width - 1)
+    reached = task.reached() if sim is None else sim
+    live = task.status == "doing" if sim is None else task.start <= sim < task.end
     cells = []
     for i in range(width):
         t = task.start + (i + 0.5) / width * (task.end - task.start)
-        done = task.status == "done" if sim is None else t <= sim
-        live = task.status == "doing" if sim is None else task.start <= sim < task.end
-        if i >= len(label):
-            cells.append(("█" if done else "▒" if live else "░", col))
-        else:
-            cells.append((label[i], f"7;{col}" if done else f"1;{col}" if live else col))
+        cells.append(("█" if t <= reached else "▒" if live else "░", col))
+    if task.lane in HUMAN:
+        cells[0] = ("◆", col)                   # your review
     return cells
 
 
@@ -202,19 +213,23 @@ def render(plan: Plan, cols: int, *, by: str = "agent", sim: float | None = None
             the plan's progress
     """
     end = max(plan.end, 1)
-    clock = plan.clock(now)
+    clock = plan.clock(now) if sim is None else None
     progress = plan.progress()
     if cursor is None:
-        cursor = sim if sim is not None else clock if clock is not None else progress
-    label_w = min(14, max((len(l) for l in plan.lanes), default=4) + 2) if by == "agent" else min(34, cols // 3)
+        cursor = sim if sim is not None else progress
+    label_w = min(14, max([len(l) for l in plan.lanes] + [len("parallel")]) + 2) if by == "agent" else min(34, cols // 3)
     span = max(cols - label_w - 8, 10)       # 8: room for " max N" after the load row
     scale = span / end                         # cells per slot
 
     def x(t: float) -> int:
         return round(t * scale)
 
-    cur = x(min(max(cursor, 0), end)) if cursor is not None else None
-    cur = min(cur, span - 1) if cur is not None else None
+    def col_of(t: float | None) -> int | None:
+        return None if t is None else min(x(min(max(t, 0), end)), span - 1)
+
+    cur, clk = col_of(cursor), col_of(clock)
+    if clk == cur:
+        clk = None
     lines: list[list[Cell]] = []
 
     # header: where we are
@@ -226,8 +241,8 @@ def render(plan: Plan, cols: int, *, by: str = "agent", sim: float | None = None
         head += text(info)
     else:
         done = sum(t.status == "done" for t in plan.tasks)
-        info = f"   {done}/{len(plan.tasks)} done · plan at {fmt_time(progress, plan.unit)}"
-        head += text(info)
+        info = f"   {done}/{len(plan.tasks)} done · "
+        head += text(info) + text(f"┃ {fmt_time(progress, plan.unit)}", CURSOR)
         if clock is not None:
             gap = progress - clock
             if progress >= plan.end:
@@ -236,8 +251,8 @@ def render(plan: Plan, cols: int, *, by: str = "agent", sim: float | None = None
                 head += text(" · on time", "32")
             else:
                 word = "ahead" if gap > 0 else "late"
-                head += text(f" · clock {fmt_time(clock, plan.unit)} → {fmt_time(abs(gap), plan.unit)} {word}",
-                             "32" if gap > 0 else CURSOR)
+                head += text(f" · ┊ clock {fmt_time(min(clock, 10 * end), plan.unit)}", CLOCK)
+                head += text(f" → {fmt_time(abs(gap), plan.unit)} {word}", "32" if gap > 0 else CURSOR)
     lines.append(head[:cols])
 
     # axis: a tick every few slots so labels do not overlap; ▼ over the line
@@ -248,7 +263,9 @@ def render(plan: Plan, cols: int, *, by: str = "agent", sim: float | None = None
         p = x(s)
         if p + len(lab) <= span + 1:
             axis[p:p + len(lab)] = text(lab, "90")
-    if cur is not None and axis[cur][0] == " ":     # never over a time label
+    if clk is not None and axis[clk][0] == " ":     # never over a time label
+        axis[clk] = ("▿", CLOCK)
+    if cur is not None and axis[cur][0] == " ":
         axis[cur] = ("▼", CURSOR)
     lines.append(text(" " * label_w) + axis)
 
@@ -258,9 +275,10 @@ def render(plan: Plan, cols: int, *, by: str = "agent", sim: float | None = None
         rows = [(short(t.text), [t]) for t in sorted(plan.tasks, key=lambda t: (t.start, t.end))]
 
     def with_cursor(cells: list[Cell]) -> list[Cell]:
+        if clk is not None and clk < len(cells) and cells[clk][0] == " ":   # the clock: only in gaps
+            cells[clk] = ("┊", CLOCK)
         if cur is not None and cur < len(cells):
-            ch, _ = cells[cur]
-            cells[cur] = ("┃", CURSOR) if ch in " ░▒█" else (ch, "1;97;41")
+            cells[cur] = ("┃", CURSOR)
         return cells
 
     for name, tasks in rows:
@@ -296,12 +314,16 @@ def render(plan: Plan, cols: int, *, by: str = "agent", sim: float | None = None
     lines.append(row)
     total = fmt_time(end, plan.unit)
     work = sum(t.end - t.start for t in plan.tasks if t.lane not in HUMAN)
-    keys = "◆ your review · █ done · ▒ in progress · ░ to do · ┃ now"
-    times = f"wall clock {total}, agent work {fmt_time(work, plan.unit)}"
+    # the key: the glyphs in the normal colour (their shades must show), the words grey
+    keys = (text("█", "") + text(" done  ", "90") + text("▒", "") + text(" in progress  ", "90")
+            + text("░", "") + text(" to do  ", "90") + text("◆", "") + text(" your review  ", "90")
+            + text("┃", CURSOR) + text(" progress", "90")
+            + ((text("  ┊", CLOCK) + text(" clock", "90")) if plan.started else []))
+    times = text(f"wall clock {total}, agent work {fmt_time(work, plan.unit)}", "90")
     if len(keys) + len(times) + 3 <= cols:
-        lines.append(text(f"{keys} · {times}", "90"))
+        lines.append(keys + text(" · ", "90") + times)
     else:
-        lines += [text(fit(keys, cols), "90"), text(fit(times, cols), "90")]
+        lines += [keys[:cols], times[:cols]]
     return [ansi(l, color) for l in lines]
 
 

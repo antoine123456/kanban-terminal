@@ -117,6 +117,37 @@ def vscode_theme(settings: dict, os_mode: str | None) -> str:
     return theme_kind(settings.get("workbench.colorTheme", "Default Dark Modern"))
 
 
+def vscode_settings() -> dict | None:
+    if os.environ.get("TERM_PROGRAM") != "vscode":
+        return None
+    try:
+        with open(vscode_settings_path(), encoding="utf-8") as f:
+            return _jsonc(f.read())
+    except (OSError, ValueError):
+        return None
+
+
+def transparent_terminal(settings: dict) -> bool:
+    """« terminal.background »: "#00000000" (alpha 00) in colorCustomizations,
+    globally or for the current theme: the terminal shows the editor behind it,
+    but answers OSC 11 with the colour without its alpha — black."""
+    custom = settings.get("workbench.colorCustomizations") or {}
+    scoped = custom.get(f"[{settings.get('workbench.colorTheme', '')}]") or {}
+    bg = str(scoped.get("terminal.background") or custom.get("terminal.background") or "")
+    return bool(re.fullmatch(r"#(?:[0-9a-fA-F]{3}0|[0-9a-fA-F]{6}00)", bg))
+
+
+def detect() -> str:
+    """Light or dark at start: the terminal's background, unless VS Code's
+    terminal is transparent (then its theme), then the settings, then dark."""
+    settings = vscode_settings()
+    if not (settings and transparent_terminal(settings)):
+        bg = terminal_background()
+        if bg:
+            return bg
+    return from_settings() or DARK
+
+
 def from_settings() -> str | None:
     """VS Code's theme when running in its terminal, else the OS appearance."""
     os_mode = os_appearance()

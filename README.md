@@ -12,7 +12,7 @@ Il faut Python 3.10 ou plus.
 
 ```sh
 git clone https://github.com/antoine123456/kanban-terminal.git
-pipx install -e kanban-terminal          # la commande « kanban » partout
+pipx install -e kanban-terminal          # les commandes kanban, gantt et tests partout
 # ou, sans pipx :
 cd kanban-terminal && python3 -m venv .venv && .venv/bin/pip install -e .
 ```
@@ -63,7 +63,25 @@ Une carte apparaît sur le Gantt si elle a une note `gantt: début-fin` (en cré
 - start: 2026-11-18 15:00          optionnel : le début réel du travail
 ```
 
-La **ligne rouge** montre où on en est. Avec `start:`, c'est l'heure actuelle, et l'en-tête dit si le plan a de l'avance ou du retard : le plan est « fait » jusqu'à la première carte pas finie. Sans `start:`, la ligne marque ce point d'avancement. Elle se met à jour toute seule quand tu coches des cartes.
+Les barres n'ont pas de texte : trois teintes de la couleur de la phase, █ fait, ▒ en cours, ░ à faire.
+
+La **ligne rouge ┃** montre l'avancement, et seuls des **marqueurs** la font bouger : une carte cochée `[_]` ou `[X]`, ou une note `at: 60%` sous une carte en cours (la barre se remplit jusque-là). Elle se place sur la première carte pas finie, à son début ou à son marqueur : tout ce qui est à gauche est fait. Avec `start:` dans Règles, une ligne grise **┊** montre l'horloge, et l'en-tête dit l'avance ou le retard.
+
+### Vue Tests (U)
+
+**U** affiche les tests du projet comme l'ancien lanceur JUnit : une barre **verte** si tout passe, **rouge** dès qu'un test échoue, puis `Runs · Errors · Failures · Skipped`. En dessous, les échecs d'abord, puis les autres en gris. ↑↓ sur un test montre sa trace, **r** relance. En ligne de commande : `tests [dossier]`, qui renvoie le code 1 si c'est rouge.
+
+Les résultats sont lus dans des rapports **JUnit XML**, le format que savent écrire tous les outils de test. Le projet est trouvé en remontant à la racine git, puis :
+
+| Projet | Commande lancée |
+|---|---|
+| `pom.xml` | `mvn test` → `target/surefire-reports/` |
+| `build.gradle(.kts)` | `gradle test` → `build/test-results/test/` |
+| Python avec pytest | `pytest --junitxml` |
+| Python avec `tests/` | unittest, via `unittest_xml.py` (unittest n'écrit pas de JUnit XML) |
+| autre (Jest, cargo…) | `tests --cmd "…" --report "chemin/*.xml"` |
+
+Python : le `.venv` du projet est utilisé s'il existe.
 
 ## Format du fichier
 
@@ -81,7 +99,15 @@ conjugaison:                      une ligne finie par « : » = groupe des carte
 - une autre
 ```
 
-Une section « Règles » (ou « Rules ») est ignorée.
+Une section « Règles » (ou « Rules ») n'a pas de cartes. Elle peut décrire les tags, une ligne par tag :
+
+```markdown
+## Règles
+- @idée: une idée pas encore planifiée
+- @volet1: préparer
+```
+
+**Couleurs des tags** : un jalon (`@v1`, `@volet2`…) colore la barre à gauche de la carte, avec la même couleur que sa phase dans le Gantt. Les autres tags s'écrivent avant le texte, en gras et en couleur (toujours la même pour un tag) : `[idée]` dans la boîte « À trier » et `@idée` une fois la carte rangée s'affichent pareil. Le menu **t** et le détail (**Entrée**) montrent la description de chaque tag. Un jalon sans description prend le nom de la section où sont ses cartes.
 
 Les issues GitHub passent par la commande `gh`, si elle est installée et connectée. Sans elle, le tableau marche quand même et affiche juste les numéros.
 

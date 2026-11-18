@@ -19,6 +19,15 @@ class ThemeTest(unittest.TestCase):
         self.assertEqual(th.vscode_theme(auto, th.DARK), th.DARK)
         self.assertEqual(th.vscode_theme(auto, th.LIGHT), th.LIGHT)
 
+    def test_transparent_terminal(self):
+        """VS Code with "terminal.background": "#00000000" answers OSC 11 with
+        black: the theme must win over that answer."""
+        self.assertTrue(th.transparent_terminal({"workbench.colorCustomizations": {"terminal.background": "#00000000"}}))
+        self.assertTrue(th.transparent_terminal({"workbench.colorTheme": "Light Modern",
+                                                 "workbench.colorCustomizations": {"[Light Modern]": {"terminal.background": "#fff0"}}}))
+        self.assertFalse(th.transparent_terminal({"workbench.colorCustomizations": {"terminal.background": "#1e1e1e"}}))
+        self.assertFalse(th.transparent_terminal({}))
+
     def test_jsonc(self):
         txt = '{\n  // comment\n  "a": "http://x", /* block */\n  "b": [1, 2,],\n}'
         self.assertEqual(th._jsonc(txt), {"a": "http://x", "b": [1, 2]})
