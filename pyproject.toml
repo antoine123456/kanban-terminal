@@ -12,6 +12,7 @@ dependencies = ["textual>=0.80"]
 
 [project.scripts]
 kanban = "kanban_terminal.app:main"
+gantt = "kanban_terminal.gantt:main"
 
 [tool.setuptools]
 packages = ["kanban_terminal"]

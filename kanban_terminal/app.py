@@ -21,6 +21,7 @@ from textual.suggester import Suggester
 from textual.widgets import Footer, Input, Label, OptionList, Static
 from textual.widgets.option_list import Option
 
+from . import gantt as gt
 from . import theme as th
 from .gh import GitHub, milestone_tag, tag_milestone
 from .model import COLUMNS, Board, Card, is_inbox
@@ -28,6 +29,7 @@ from .model import COLUMNS, Board, Card, is_inbox
 COL_NAMES = dict(COLUMNS)
 SECTION_COLORS = ["#4f8ff7", "#f25f5c", "#b48ead", "#56b6c2", "#e5c07b"]
 INBOX_COLOR = "#d7a700"
+MUTED = "bright_black"  # the terminal's grey: "dim" turns into black boxes in VS Code's terminal
 LATER = "plus-tard"  # the tag that puts a card aside
 
 
@@ -174,10 +176,10 @@ class TagPicker(ModalScreen[str | None]):
             ts = [(t, n) for t, n in self.counts.items() if tag_group(t) == g and q in t.lower()]
             if not ts:
                 continue
-            opts.append(Option(Text(g, style="bold dim"), disabled=True))
+            opts.append(Option(Text(g, style=f"bold {MUTED}"), disabled=True))
             for t, n in ts:
                 mark = "● " if t == self.current else "  "
-                opts.append(Option(Text.assemble(f"{mark}  @{t}", (f"  {n}", "dim")), id=t))
+                opts.append(Option(Text.assemble(f"{mark}  @{t}", (f"  {n}", MUTED)), id=t))
         ol.add_options(opts)
         first = next((i for i, o in enumerate(opts) if not o.disabled and (q or o.id == (self.current or "__all__"))), None)
         if first is not None:
@@ -229,6 +231,7 @@ HELP = """[b]Se déplacer[/b]  ←→ colonne · ↑↓ carte · Entrée détail
 [b]Écrire[/b]  a ajouter (dans À trier) · e modifier le texte · E ouvrir dans l'éditeur à la ligne
 [b]GitHub[/b]  o ouvrir l'issue · i créer l'issue de la carte · c fermer / rouvrir l'issue · g actualiser
 [b]Filtres[/b]  / chercher · t choisir le tag (par groupes : jalons, type, thèmes) · s section · f cacher « Fait » · w texte complet · Échap tout effacer
+[b]Gantt[/b]  G : tableau → Gantt par agent → par tâche → tableau · notes « gantt: a-b », lignes agents: / unit: / start: dans Règles · ligne rouge = où on en est
 [b]Fichier[/b]  rechargé tout seul quand il change · r recharger · q quitter
 [b]Thème[/b]  clair / sombre comme VS Code (suit ses changements) · T basculer à la main
 [b]Claude[/b]  x traiter la carte avec Claude · X traiter « À trier » (Pending) · le tableau revient quand Claude se ferme"""
@@ -246,6 +249,9 @@ class KanbanApp(App):
     .col-title { height: 1; padding: 0 1; text-style: bold; color: $text-muted; }
     .col OptionList { height: 1fr; border: none; padding: 0; background: transparent; scrollbar-size-vertical: 1; }
     .col OptionList:focus { border: none; }
+    #gantt { height: 1fr; padding: 0 1; display: none; overflow-y: auto; }
+    .gantt-view #gantt { display: block; }
+    .gantt-view #board, .gantt-view #detail { display: none; }
     #detail { height: auto; max-height: 3; padding: 0 1; color: $text; background: $boost; }
     ModalScreen { align: center middle; }
     .dialog { width: 70%; max-width: 100; height: auto; max-height: 90%; border: round $accent; background: $surface; padding: 0 1; }
@@ -266,6 +272,7 @@ class KanbanApp(App):
         Binding("slash", "search", "chercher"), Binding("t", "cycle_tag", "tag"), Binding("s", "cycle_section", show=False),
         Binding("f", "toggle_done", show=False), Binding("w", "toggle_wrap", show=False), Binding("escape", "clear_filters", show=False),
         Binding("g", "refresh_gh", show=False), Binding("T", "toggle_mode", show=False), Binding("r", "reload", show=False),
+        Binding("G", "toggle_gantt", "gantt"),
         Binding("x", "claude", "claude"), Binding("X", "claude_inbox", show=False),
         Binding("question_mark", "help", "aide"), Binding("q", "quit", "quitter"),
     ]
@@ -283,6 +290,7 @@ class KanbanApp(App):
         self.hide_done = False
         self.wrap = False
         self.shown: dict[str, list[Card]] = {}
+        self.gantt_by: str | None = None   # None: the board · "agent" / "task": the Gantt view
 
     # ── layout ──
     def compose(self) -> ComposeResult:
@@ -292,6 +300,7 @@ class KanbanApp(App):
                 with Vertical(classes="col", id=f"col-{key}"):
                     yield Label(name, classes="col-title", id=f"title-{key}")
                     yield CardList(id=f"list-{key}")
+        yield Static(id="gantt")
         yield Static(id="detail")
         yield Footer()
 
@@ -307,11 +316,12 @@ class KanbanApp(App):
         self.call_after_refresh(self.rebuild)
         self.query_one("#list-todo", OptionList).focus()
         self.set_interval(1.0, self.watch_file)
+        self.set_interval(5.0, self.draw_gantt)   # the red line follows the clock
         self.load_issues()
 
     # ── light / dark ──
     def apply_mode(self) -> None:
-        self.theme = "textual-light" if self.mode == th.LIGHT else "textual-dark"
+        self.theme = "ansi-light" if self.mode == th.LIGHT else "textual-dark"
 
     @work(thread=True, exclusive=True, group="mode")
     def check_mode(self) -> None:
@@ -355,15 +365,15 @@ class KanbanApp(App):
         head.append("▌", style="#777777" if later else self.section_color(c.section))
         if c.custom_mark:
             head.append(f"{c.custom_mark} ", style=f"bold {INBOX_COLOR}")
-        body = Text(re.sub(r"\s*\(#\d+\)", "", c.text), style="dim italic" if later else "dim" if c.col == "done" else "")  # the issue is a chip
+        body = Text(re.sub(r"\s*\(#\d+\)", "", c.text), style=f"{MUTED} italic" if later else MUTED if c.col == "done" else "")  # the issue is a chip
         tail = Text()
         for n in c.issues:
             st = self.gh.state(n)
-            tail.append(f" #{n}{'✓' if st == 'closed' else ''}", style="dim" if later else "green" if st == "closed" else "cyan")
+            tail.append(f" #{n}{'✓' if st == 'closed' else ''}", style=MUTED if later else "green" if st == "closed" else "cyan")
         for tg in self.tags_of(c):
-            tail.append(f" @{tg}", style="dim" if later else "magenta")
+            tail.append(f" @{tg}", style=MUTED if later else "magenta")
         if c.notes:
-            tail.append(f" +{len(c.notes)}", style="dim")
+            tail.append(f" +{len(c.notes)}", style=MUTED)
         # One line per card by default (a short bottom panel shows more), w
         # unfolds; the text is cut, never the issue / tag chips.
         if not self.wrap and width > 4:
@@ -373,7 +383,7 @@ class KanbanApp(App):
                 room = width - head.cell_len
             if body.cell_len > room:
                 body.truncate(max(1, room - 1))
-                body.append("…", style="dim")
+                body.append("…", style=MUTED)
         return Text.assemble(head, body, tail)
 
     def rebuild(self, keep: tuple[str, str] | None = None) -> None:
@@ -395,6 +405,7 @@ class KanbanApp(App):
         self.query_one("#col-done").set_class(self.hide_done, "hidden")
         self.update_bar()
         self.update_detail()
+        self.draw_gantt()
 
     def update_bar(self) -> None:
         parts = [os.path.basename(self.board.path)]
@@ -437,13 +448,13 @@ class KanbanApp(App):
         c = self.current()
         d = self.query_one("#detail", Static)
         if not c:
-            d.update(Text("—", style="dim"))
+            d.update(Text("—", style=MUTED))
             return
         t = Text()
         t.append(f"{c.section}", style=f"bold {self.section_color(c.section)}")
         if c.group:
-            t.append(f" › {c.group}", style="dim")
-        t.append(f"  l.{c.line + 1}  ", style="dim")
+            t.append(f" › {c.group}", style=MUTED)
+        t.append(f"  l.{c.line + 1}  ", style=MUTED)
         t.append(c.text)
         d.update(t)
 
@@ -709,6 +720,33 @@ class KanbanApp(App):
     def action_reload(self) -> None:
         self.reload(quiet=False)
 
+    # ── Gantt view (gantt.py): the same file, who works when ──
+    GANTT_KEYS = {"toggle_gantt", "quit", "help", "toggle_mode", "reload", "command_palette"}
+
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        """In the Gantt view the cards are hidden: no key acts on them."""
+        return action in self.GANTT_KEYS if self.gantt_by else True
+
+    def action_toggle_gantt(self) -> None:
+        """G: board → Gantt by agent → Gantt by task → board."""
+        self.gantt_by = {None: "agent", "agent": "task"}.get(self.gantt_by)
+        self.screen.set_class(bool(self.gantt_by), "gantt-view")
+        if not self.gantt_by:
+            self.query_one(f"#list-{self.focused_col()}", OptionList).focus()
+        self.refresh_bindings()
+        self.draw_gantt()
+
+    def draw_gantt(self) -> None:
+        if not self.gantt_by:
+            return
+        w = self.query_one("#gantt", Static)
+        plan = gt.parse(self.board.read_lines())
+        if not plan.tasks:
+            w.update(Text("Aucune carte avec une note « gantt: a-b » (voir gantt.py).\nG : retour au tableau.", style=MUTED))
+            return
+        width = max((w.size.width or self.size.width) - 2, 40)
+        w.update(Text.from_ansi("\n".join(gt.render(plan, width, by=self.gantt_by))))
+
     def action_help(self) -> None:
         self.push_screen(Detail(Text.from_markup(HELP)))
 
@@ -719,21 +757,21 @@ class KanbanApp(App):
         t = Text()
         t.append(f"{COL_NAMES[c.col]} · {c.section}", style=f"bold {self.section_color(c.section)}")
         if c.group:
-            t.append(f" › {c.group}", style="dim")
-        t.append(f"   ligne {c.line + 1}\n\n", style="dim")
+            t.append(f" › {c.group}", style=MUTED)
+        t.append(f"   ligne {c.line + 1}\n\n", style=MUTED)
         t.append(c.text + "\n")
         for tg in self.tags_of(c):
             t.append(f"@{tg} ", style="magenta")
         if c.notes:
             t.append("\n")
             for n in c.notes:
-                t.append(f"  • {n}\n", style="dim")
+                t.append(f"  • {n}\n", style=MUTED)
         for n in c.issues:
             i = self.gh.issues.get(n) or {}
             st = self.gh.state(n)
             t.append(f"\n#{n} ", style="green" if st == "closed" else "cyan")
             t.append(f"{i.get('title', '')}  ", style="")
-            t.append(f"{st or '?'} · {self.gh.milestone(n) or 'sans milestone'}", style="dim")
+            t.append(f"{st or '?'} · {self.gh.milestone(n) or 'sans milestone'}", style=MUTED)
         self.push_screen(Detail(t))
 
 

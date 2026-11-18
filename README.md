@@ -51,6 +51,20 @@ En sortant une carte de « À trier », le tableau demande dans quelle section l
 
 **x** lance [Claude Code](https://claude.com/claude-code) sur la carte choisie : le tableau s'efface, `claude` s'ouvre dans le même terminal, dans le dossier du fichier, avec le texte de la carte (et ses notes) comme première demande. **X** lui demande de traiter toute la boîte « À trier » (« exécute Pending »). Quand tu quittes Claude (`/exit` ou ⌃D deux fois), le tableau revient, rechargé avec ce que Claude a changé dans le fichier. Autre commande : `KANBAN_CLAUDE="claude --model opus" kanban`.
 
+### Vue Gantt (G)
+
+**G** passe du tableau au Gantt du même fichier (par agent, puis par tâche, puis retour au tableau). Aussi en ligne de commande : `gantt fichier.md` (`--by task`, `--play` rejoue le plan, `--watch` reste ouvert et suit le fichier).
+
+Une carte apparaît sur le Gantt si elle a une note `gantt: début-fin` (en créneaux). Son tag `@volet1`… donne la couleur, son tag d'agent donne la ligne. Dans la section Règles :
+
+```markdown
+- agents: lead, scan, you          l'ordre des lignes (you = tes relectures, ◆)
+- unit: 5 min                      la durée d'un créneau
+- start: 2026-11-18 15:00          optionnel : le début réel du travail
+```
+
+La **ligne rouge** montre où on en est. Avec `start:`, c'est l'heure actuelle, et l'en-tête dit si le plan a de l'avance ou du retard : le plan est « fait » jusqu'à la première carte pas finie. Sans `start:`, la ligne marque ce point d'avancement. Elle se met à jour toute seule quand tu coches des cartes.
+
 ## Format du fichier
 
 ```markdown
