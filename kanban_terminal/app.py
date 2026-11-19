@@ -26,7 +26,7 @@ from . import gantt as gt
 from . import junit
 from . import theme as th
 from .gh import GitHub, milestone_tag, tag_milestone
-from .model import COLUMNS, Board, Card, is_inbox
+from .model import COLUMNS, Board, Card, is_inbox, recent_first
 
 COL_NAMES = dict(COLUMNS)
 SECTION_COLORS = ["#4f8ff7", "#f25f5c", "#b48ead", "#56b6c2", "#e5c07b"]
@@ -467,6 +467,8 @@ class KanbanApp(App):
         keep = keep or self.current_key()
         for key, _ in COLUMNS:
             cards = [c for c in self.board.cards if c.col == key and self.visible(c)]
+            if key == "done":
+                cards = recent_first(cards)  # the last done on top
             self.shown[key] = cards
             ol = self.query_one(f"#list-{key}", OptionList)
             hi = ol.highlighted

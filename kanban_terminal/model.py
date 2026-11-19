@@ -55,6 +55,19 @@ class Card:
         return self.mark if self.mark and self.mark not in COL_OF_MARK else None
 
 
+def recent_first(cards: list[Card]) -> list[Card]:
+    """The « Fait » column, most recently done on top: by issue number (#N,
+    the highest of the card), a card without one taking the number of the
+    card above it in the file (lines are added in order); then the lower line."""
+    rank, last = {}, 0
+    for c in sorted(cards, key=lambda c: c.line):
+        nums = [int(n) for n in c.issues]
+        if nums:
+            last = max(nums)
+        rank[id(c)] = (max(nums) if nums else last, c.line)
+    return sorted(cards, key=lambda c: rank[id(c)], reverse=True)
+
+
 def is_inbox(section: str | None) -> bool:
     return bool(section) and section.strip().lower() in INBOX_NAMES
 

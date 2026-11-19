@@ -258,6 +258,16 @@ function tagDescriptions(lines) {
 
 const customMark = c => (c.mark && !(c.mark in COL_OF_MARK)) ? c.mark : null;
 const issuesOf = c => [...new Set([...(c.raw + " " + c.notes.join(" ")).matchAll(ISSUE)].map(m => m[1]))];
+// « Fait »: the last done on top — by issue number, a card without one taking the number of the card above it (as recent_first in model.py)
+function recentFirst(cards) {
+  const rank = new Map(); let last = 0;
+  [...cards].sort((a, b) => a.line - b.line).forEach(c => {
+    const nums = issuesOf(c).map(Number);
+    if (nums.length) last = Math.max(...nums);
+    rank.set(c, [nums.length ? Math.max(...nums) : last, c.line]);
+  });
+  return [...cards].sort((a, b) => { const x = rank.get(a), y = rank.get(b); return y[0] - x[0] || y[1] - x[1]; });
+}
 const composeLine = (mark, text) => mark !== null ? `- [${mark}] ${text}` : `- ${text}`;
 
 function sectionEnd(lines, name) {
@@ -424,7 +434,8 @@ function render(keep) {
   if (S.hideDone && S.col === "done") S.col = "doing";
   let html = "";
   for (const [key, name] of COLUMNS) {
-    const cards = board.cards.filter(c => c.col === key && visible(c));
+    let cards = board.cards.filter(c => c.col === key && visible(c));
+    if (key === "done") cards = recentFirst(cards);
     S.shown[key] = cards;
     const idx = keep ? cards.findIndex(c => keyOf(c) === keep) : -1;
     if (idx >= 0) S.hl[key] = idx;

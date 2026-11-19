@@ -47,7 +47,7 @@ Dans VS Code, ouvre un terminal dans le panneau du bas (⌃`), lance `kanban`, p
 | **x** · **X** | Claude Code : traiter la carte choisie · traiter toute la boîte « À trier » (voir plus bas) |
 | **Échap** · **r** · **T** · **?** · **q** | effacer les filtres · recharger · clair / sombre · aide · quitter |
 
-En sortant une carte de « À trier », le tableau demande dans quelle section la ranger (Idées, Correction…). Une carte passée dans « Fait » qui a une issue encore ouverte propose de la fermer sur GitHub.
+En sortant une carte de « À trier », le tableau demande dans quelle section la ranger (Idées, Correction…). Une carte passée dans « Fait » qui a une issue encore ouverte propose de la fermer sur GitHub. La colonne « Fait » montre en haut les tâches faites le plus récemment : par numéro d'issue (#N), une carte sans issue prenant celui de la carte au-dessus d'elle dans le fichier.
 
 ### Lancer Claude depuis le tableau
 
