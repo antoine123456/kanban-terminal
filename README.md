@@ -71,7 +71,7 @@ La **ligne rouge ┃** montre l'avancement, et seuls des **marqueurs** la font b
 
 ### Vue Tests (U)
 
-**U** affiche les tests du projet comme l'ancien lanceur JUnit : une barre **verte** si tout passe, **rouge** dès qu'un test échoue, puis `Runs · Errors · Failures · Skipped`. En dessous, les échecs d'abord, puis les autres en gris. ↑↓ sur un test montre sa trace, **r** relance. En ligne de commande : `tests [dossier]`, qui renvoie le code 1 si c'est rouge.
+**U** affiche les tests du projet comme l'ancien lanceur JUnit : une barre **verte** si tout passe, **rouge** dès qu'un test échoue, puis `Runs · Errors · Failures · Skipped`. En dessous, les échecs d'abord, puis les autres en gris. Les tests ne se lancent pas tout seuls : **r** les lance (et les relance). ↑↓ sur un test montre sa trace. En ligne de commande : `tests [dossier]`, qui renvoie le code 1 si c'est rouge.
 
 Les résultats sont lus dans des rapports **JUnit XML**, le format que savent écrire tous les outils de test. Le projet est trouvé en remontant à la racine git, puis :
 

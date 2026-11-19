@@ -257,7 +257,7 @@ HELP = """[b]Se déplacer[/b]  ←→ colonne · ↑↓ carte · Entrée détail
 [b]Tags[/b]  @volet1, @v2… colorent la barre de gauche · les autres s'écrivent en gras, en couleur, avant le texte · leur sens : « - @tag: description » dans Règles (montré par t et Entrée)
 [b]Filtres[/b]  / chercher · t choisir le tag (par groupes : jalons, type, thèmes) · s section · f cacher « Fait » · w texte complet · Échap tout effacer
 [b]Gantt[/b]  G : tableau → Gantt par agent → par tâche → tableau · notes « gantt: a-b », lignes agents: / unit: / start: dans Règles · ligne rouge = avancement (cartes cochées, notes « at: 60% »), ┊ = horloge
-[b]Tests[/b]  U : la barre verte / rouge façon JUnit (pytest, unittest, Maven, Gradle) · ↑↓ un test → sa trace · r relancer · commande : tests
+[b]Tests[/b]  U : la barre verte / rouge façon JUnit (pytest, unittest, Maven, Gradle) · r lancer / relancer · ↑↓ un test → sa trace · commande : tests
 [b]Fichier[/b]  rechargé tout seul quand il change · r recharger · q quitter
 [b]Thème[/b]  clair / sombre comme VS Code (suit ses changements) · T basculer à la main
 [b]Claude[/b]  x traiter la carte avec Claude · X traiter « À trier » (Pending) · le tableau revient quand Claude se ferme"""
@@ -834,7 +834,7 @@ class KanbanApp(App):
 
     # ── Test view (junit.py): the JUnit bar, green or red ──
     def action_toggle_tests(self) -> None:
-        """U: the test view and back. The first time, the tests run."""
+        """U: the test view and back. Nothing runs by itself: r launches the tests."""
         self.test_view = not self.test_view
         if self.test_view and self.gantt_by:
             self.gantt_by = None
@@ -842,8 +842,6 @@ class KanbanApp(App):
         self.screen.set_class(self.test_view, "tests-view")
         if self.test_view:
             self.query_one("#tests-list", OptionList).focus()
-            if self.tests is None and not self.tests_running:
-                self.run_tests()
         else:
             self.query_one(f"#list-{self.focused_col()}", OptionList).focus()
         self.refresh_bindings()
@@ -860,6 +858,10 @@ class KanbanApp(App):
     def test_head(self, width: int) -> Text:
         res = self.tests
         t = Text()
+        if res is None and not self.tests_running:
+            t.append(f"{os.path.basename(junit.project_root(self.board.path))}\n", style="bold")
+            t.append("r = lancer les tests", style="bold yellow")
+            return t.append("  ·  U = revenir au tableau", style=MUTED)
         if self.tests_running or res is None:
             t.append(f"{os.path.basename(junit.project_root(self.board.path))} · tests en cours…\n", style="bold")
             t.append("█" * min(width, 40) + "\n", style="yellow")

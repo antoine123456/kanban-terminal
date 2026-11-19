@@ -123,6 +123,10 @@ class ViewTest(unittest.TestCase):
             app = KanbanApp(os.path.join(root, "idee.md"), follow=False)
             async with app.run_test(size=(100, 26)) as pilot:
                 await pilot.press("U")
+                await pilot.pause(0.3)
+                self.assertIsNone(app.tests)  # nothing runs until r (#4)
+                self.assertFalse(app.tests_running)
+                await pilot.press("r")
                 for _ in range(100):
                     await pilot.pause(0.1)
                     if app.tests is not None and not app.tests_running:
