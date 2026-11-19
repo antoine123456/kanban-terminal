@@ -14,7 +14,7 @@ Il faut Python 3.10 ou plus.
 
 ```sh
 git clone https://github.com/antoine123456/kanban-terminal.git
-pipx install -e kanban-terminal          # les commandes kanban, gantt et tests partout
+pipx install -e kanban-terminal          # les commandes kanban, gantt, tests et kanban-snippets partout
 # ou, sans pipx :
 cd kanban-terminal && python3 -m venv .venv && .venv/bin/pip install -e .
 ```

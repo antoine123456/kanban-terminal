@@ -14,6 +14,7 @@ dependencies = ["textual>=0.80"]
 kanban = "kanban_terminal.app:main"
 gantt = "kanban_terminal.gantt:main"
 tests = "kanban_terminal.junit:main"
+kanban-snippets = "kanban_terminal.snippets:main"
 
 [tool.setuptools]
 packages = ["kanban_terminal"]
