@@ -111,6 +111,23 @@ Une section « Règles » (ou « Rules ») n'a pas de cartes. Elle peut décrire
 
 **Couleurs des tags** : un jalon (`@v1`, `@volet2`…) colore la barre à gauche de la carte, avec la même couleur que sa phase dans le Gantt. Les autres tags s'écrivent avant le texte, en gras et en couleur (toujours la même pour un tag) : `[idée]` dans la boîte « À trier » et `@idée` une fois la carte rangée s'affichent pareil. Le menu **t** et le détail (**Entrée**) montrent la description de chaque tag. Un jalon sans description prend le nom de la section où sont ses cartes.
 
+**Les tags proposés en tapant, dans VS Code** : `kanban-snippets` lit les tags et leurs descriptions (lignes `- @tag: …` des Règles, ou tableau `| @tag | description |` sous une section « ## Tags ») et écrit `.vscode/markdown.code-snippets` à côté du fichier. Taper `@v` dans un fichier Markdown propose alors `@v1` avec sa description. La commande signale aussi les tags utilisés sans description.
+
+```sh
+kanban-snippets                # idee.md, ideas.md, TODO.md… du dossier courant
+kanban-snippets chemin/idees.md
+```
+
+Pour la lancer depuis VS Code (F1 → « Tasks: Run Task »), et à chaque ouverture du dossier, ajoute une tâche dans `.vscode/tasks.json` :
+
+```json
+{ "version": "2.0.0", "tasks": [
+  { "label": "Tags → snippets", "type": "shell", "command": "kanban-snippets",
+    "problemMatcher": [], "runOptions": { "runOn": "folderOpen" } } ] }
+```
+
+Les suggestions apparaissent en tapant si `"[markdown]": { "editor.quickSuggestions": { "other": "on" } }` est dans les réglages.
+
 Les issues GitHub passent par la commande `gh`, si elle est installée et connectée. Sans elle, le tableau marche quand même et affiche juste les numéros.
 
 ## Tests
