@@ -50,6 +50,19 @@ class CardList(OptionList):
         was_focused = time.monotonic() - self._focused_at > 0.15
         self._armed = self.highlighted if was_focused else None
 
+    def render_line(self, y: int):
+        # Textual never draws the mouse-over on the highlighted card, and a
+        # column without the focus draws its cursor invisible (ANSI themes):
+        # its first card then never lit up under the mouse. Drawn as hovered.
+        h = self.highlighted
+        if h is not None and not self.has_focus and self._mouse_hovering_over == h:
+            self.set_reactive(CardList.highlighted, None)
+            try:
+                return super().render_line(y)
+            finally:
+                self.set_reactive(CardList.highlighted, h)
+        return super().render_line(y)
+
     async def _on_click(self, event: events.Click) -> None:
         event.prevent_default()
         i = event.style.meta.get("option")
