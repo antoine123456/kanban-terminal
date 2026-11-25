@@ -14,7 +14,7 @@ Il faut Python 3.10 ou plus.
 
 ```sh
 git clone https://github.com/antoine123456/kanban-terminal.git
-pipx install -e kanban-terminal          # les commandes kanban, gantt, tests et kanban-snippets partout
+pipx install -e kanban-terminal          # les commandes kanban, gantt, tests, kanban-snippets et kanban-tidy partout
 # ou, sans pipx :
 cd kanban-terminal && python3 -m venv .venv && .venv/bin/pip install -e .
 ```
@@ -127,6 +127,27 @@ Pour la lancer depuis VS Code (F1 → « Tasks: Run Task »), et à chaque ouver
 ```
 
 Les suggestions apparaissent en tapant si `"[markdown]": { "editor.quickSuggestions": { "other": "on" } }` est dans les réglages.
+
+**Ranger le fichier à chaque enregistrement** : `kanban-tidy` range le fichier d'idées, sans IA :
+
+- **Pending numéroté** : chaque point devient une carte du tableau (`- `) et reçoit un numéro dans l'ordre du fichier, `- P1 @tag …`, `- P2 …` (P plutôt que #, qui désigne une issue). Un point commence par `- `, ou par `@…` après une ligne vide ; le reste (un log collé, une réponse `→ …`) reste dans le point du dessus.
+- **Tags manquants** : un tag utilisé dans le Pending mais décrit nulle part reçoit une ligne `| @tag | à décrire |` dans le tableau « ## Tags ».
+- **Snippets** : `.vscode/markdown.code-snippets` est réécrit (comme `kanban-snippets`).
+
+Le fichier n'est réécrit que si quelque chose change, et pas s'il a été réenregistré entre-temps.
+
+```sh
+kanban-tidy                    # une fois
+kanban-tidy idee.md --watch    # à chaque enregistrement
+```
+
+Dans VS Code, une tâche de fond le lance à l'ouverture du dossier, puis il range à chaque enregistrement :
+
+```json
+{ "label": "idee.md → rangé à chaque enregistrement", "type": "shell",
+  "command": "kanban-tidy idee.md --watch", "isBackground": true, "problemMatcher": [],
+  "presentation": { "reveal": "never", "panel": "dedicated" }, "runOptions": { "runOn": "folderOpen" } }
+```
 
 Les issues GitHub passent par la commande `gh`, si elle est installée et connectée. Sans elle, le tableau marche quand même et affiche juste les numéros.
 

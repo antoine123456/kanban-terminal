@@ -15,6 +15,7 @@ kanban = "kanban_terminal.app:main"
 gantt = "kanban_terminal.gantt:main"
 tests = "kanban_terminal.junit:main"
 kanban-snippets = "kanban_terminal.snippets:main"
+kanban-tidy = "kanban_terminal.tidy:main"
 
 [tool.setuptools]
 packages = ["kanban_terminal"]
