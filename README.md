@@ -55,7 +55,7 @@ En sortant une carte de « À trier », le tableau demande dans quelle section l
 
 ### Vue Gantt (G)
 
-**G** passe du tableau au Gantt du même fichier (par agent, puis par tâche, puis retour au tableau). Aussi en ligne de commande : `gantt fichier.md` (`--by task`, `--play` rejoue le plan, `--watch` reste ouvert et suit le fichier). Dans la vue, **↑↓** (ou **j k**) ou **un clic** éclairent une ligne d'un bout à l'autre, pour la suivre de son nom jusqu'à ses barres ; un clic sur la ligne éclairée l'éteint.
+**G** passe du tableau au Gantt du même fichier (par agent, puis par tâche, puis retour au tableau). Aussi en ligne de commande : `gantt fichier.md` (`--by task`, `--play` rejoue le plan, `--watch` reste ouvert et suit le fichier). Dans la vue, **↑↓** (ou **j k**) ou **un clic** éclairent une ligne d'un bout à l'autre, pour la suivre de son nom jusqu'à ses barres ; un clic sur la ligne éclairée l'éteint. Avec une horloge (`start:`), l'en-tête donne aussi la **fin prévue au rythme réel** : ce qui reste du plan, étiré comme ce qui est fait (« end ≈ 11:17 at this pace (×0.28) » = presque quatre fois plus vite que prévu).
 
 Une carte apparaît sur le Gantt si elle a une note `gantt: début-fin` (en créneaux). Son tag `@volet1`… donne la couleur, son tag d'agent donne la ligne. Dans la section Règles :
 

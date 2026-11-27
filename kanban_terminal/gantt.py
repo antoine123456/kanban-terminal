@@ -34,7 +34,7 @@ import shutil
 import sys
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 
 ITEM = re.compile(r"^- (?:\[(?P<mark>[^\]]{1,12})\]\s*)?(?P<body>.*)$")
 TAG = re.compile(r"(?<!\S)@([\w-]+)")
@@ -89,6 +89,17 @@ class Plan:
         """Up to where the plan is done: the first unfinished card, at its
         start or at its « at: » marker. Moves only when the file changes."""
         return min((t.reached() for t in self.tasks if t.status != "done"), default=self.end)
+
+    def forecast(self, now: datetime | None = None) -> tuple[datetime, float] | None:
+        """When the plan should end at the pace really kept so far, and that pace
+        (1 = as planned, 0.2 = five times faster): what's left of the plan,
+        stretched like what is done. None before any progress or without a clock."""
+        clock, done = self.clock(now), self.progress()
+        if clock is None or done <= 0 or done >= self.end or clock <= 0:
+            return None
+        pace = clock / done
+        minutes = {"m": 1, "h": 60, "d": 1440, "j": 1440}[self.unit[1][0].lower()] * self.unit[0]
+        return (now or datetime.now()) + timedelta(minutes=(self.end - done) * pace * minutes), pace
 
     def clock(self, now: datetime | None = None) -> float | None:
         """Slots elapsed since ``start:``, if the unit is a duration."""
@@ -270,6 +281,9 @@ def render(plan: Plan, cols: int, *, by: str = "agent", sim: float | None = None
                 word = "ahead" if gap > 0 else "late"
                 head += text(f" · ┊ clock {fmt_time(min(clock, 10 * end), plan.unit)}", CLOCK)
                 head += text(f" → {fmt_time(abs(gap), plan.unit)} {word}", "32" if gap > 0 else CURSOR)
+            # the estimates are guesses: the end at the pace really kept tells more
+            if (fc := plan.forecast(now)) is not None:
+                head += text(f" · end ≈ {fc[0]:%H:%M} at this pace (×{fc[1]:.2g})", "90")
     lines.append(head[:cols])
 
     # axis: a tick every few slots so labels do not overlap; ▼ over the line

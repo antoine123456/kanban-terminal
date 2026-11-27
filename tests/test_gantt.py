@@ -107,3 +107,14 @@ class SelectedRowTest(unittest.TestCase):
             asyncio.run(run())
         finally:
             os.remove(path)
+
+
+class ForecastTest(unittest.TestCase):
+    def test_end_at_the_pace_kept(self):
+        p = gt.parse(("- start: 2026-01-01 10:00\n" + PLAN).replace("## Rules\n", "## Rules\n- start: 2026-01-01 10:00\n").split("\n"))
+        # progress 4 slots (20 min planned) reached in 10 min: twice as fast, the 5 slots left take 12.5 min
+        end, pace = p.forecast(datetime(2026, 1, 1, 10, 10))
+        self.assertAlmostEqual(pace, 0.5)
+        self.assertEqual(end, datetime(2026, 1, 1, 10, 22, 30))
+        self.assertIn("end ≈ 10:22", gt.render(p, 120, color=False, now=datetime(2026, 1, 1, 10, 10))[0])
+        self.assertIsNone(gt.parse(PLAN.split("\n")).forecast())   # no start: no clock
