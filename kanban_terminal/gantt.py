@@ -209,13 +209,25 @@ def fmt_time(slots: float, unit: tuple[float, str] | None) -> str:
     return f"{round(v):g}{u[0]}"
 
 
+SELECTED = "48;5;238"   # the selected row's background, edge to edge
+HEAD_LINES = 2          # header and axis, above the first row
+
+
+def row_count(plan: Plan, by: str = "agent") -> int:
+    """How many rows the chart draws: one per agent, or one per task."""
+    return len(plan.lanes) if by == "agent" else len(plan.tasks)
+
+
 def render(plan: Plan, cols: int, *, by: str = "agent", sim: float | None = None,
-           cursor: float | None = None, color: bool = True, now: datetime | None = None) -> list[str]:
+           cursor: float | None = None, color: bool = True, now: datetime | None = None,
+           selected: int | None = None) -> list[str]:
     """The chart as ANSI lines of at most ``cols`` cells.
 
     sim     replay time: bars fill up to it, the line follows it (--play)
     cursor  where to draw the red line; by default the clock (``start:``) or
             the plan's progress
+    selected  a row (0 = the first agent / task) lit across the whole width,
+              to follow it from its name to its bars
     """
     end = max(plan.end, 1)
     clock = plan.clock(now) if sim is None else None
@@ -286,14 +298,17 @@ def render(plan: Plan, cols: int, *, by: str = "agent", sim: float | None = None
             cells[cur] = ("┃", CURSOR)
         return cells
 
-    for name, tasks in rows:
+    for i, (name, tasks) in enumerate(rows):
         cells: list[Cell] = [(" ", "")] * span
         for t in tasks:
             a = min(x(t.start), span - 1)
             b = min(max(x(t.end), a + 1), span)
             cells[a:b] = bar(t, b - a, sim)
         label = text(fit(name, label_w - 1).ljust(label_w), "1" if name in HUMAN else "")
-        lines.append(label + with_cursor(cells))
+        row = label + with_cursor(cells)
+        if i == selected:
+            row = [(ch, f"{code};{SELECTED}" if code else SELECTED) for ch, code in row + text(" " * (cols - len(row)))]
+        lines.append(row)
 
     # load row: how many agents work in each column
     load: list[Cell] = []

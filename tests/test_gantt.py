@@ -62,3 +62,48 @@ class GanttTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SelectedRowTest(unittest.TestCase):
+    """A row picked with ↑↓ or a click is lit across the whole width."""
+
+    def test_render_lights_the_row(self):
+        p = gt.parse(PLAN.split("\n"))
+        self.assertEqual(gt.row_count(p, "agent"), 3)
+        self.assertEqual(gt.row_count(p, "task"), 4)
+        lines = gt.render(p, 80, selected=1)
+        row = lines[gt.HEAD_LINES + 1]
+        self.assertIn(gt.SELECTED, row)
+        others = [l for i, l in enumerate(lines) if i != gt.HEAD_LINES + 1]
+        self.assertFalse(any(gt.SELECTED in l for l in others))
+        self.assertEqual(len(gt.render(p, 80, selected=1, color=False)[gt.HEAD_LINES + 1]), 80)  # edge to edge
+
+    def test_keys_and_click_in_the_app(self):
+        import asyncio, os, tempfile
+        from textual.widgets import Static
+        from kanban_terminal.app import KanbanApp
+        fd, path = tempfile.mkstemp(suffix=".md")
+        os.write(fd, PLAN.encode()); os.close(fd)
+
+        async def run():
+            app = KanbanApp(path, repo=None)
+            async with app.run_test(size=(120, 30)) as pilot:
+                await pilot.press("G")
+                await pilot.press("down")
+                self.assertEqual(app.gantt_row, 0)
+                await pilot.press("down", "down", "down")
+                self.assertEqual(app.gantt_row, 0)          # wraps round the 3 agents
+                await pilot.press("up")
+                self.assertEqual(app.gantt_row, 2)
+                await pilot.click("#gantt", offset=(5, gt.HEAD_LINES + 1))
+                self.assertEqual(app.gantt_row, 1)
+                await pilot.click("#gantt", offset=(5, gt.HEAD_LINES + 1))
+                self.assertIsNone(app.gantt_row)            # the lit one again: off
+                await pilot.press("G")                       # by task: rows start again
+                self.assertIsNone(app.gantt_row)
+                await pilot.press("G")                       # back to the board: ↑↓ move cards again
+                self.assertFalse(app.check_action("gantt_row", ()))
+        try:
+            asyncio.run(run())
+        finally:
+            os.remove(path)

@@ -269,7 +269,7 @@ HELP = """[b]Se déplacer[/b]  ←→ colonne · ↑↓ carte · Entrée détail
 [b]GitHub[/b]  o ouvrir l'issue · i créer l'issue de la carte · c fermer / rouvrir l'issue · g actualiser
 [b]Tags[/b]  @volet1, @v2… colorent la barre de gauche · les autres s'écrivent en gras, en couleur, avant le texte · leur sens : « - @tag: description » dans Règles (montré par t et Entrée)
 [b]Filtres[/b]  / chercher · t choisir le tag (par groupes : jalons, type, thèmes) · s section · f cacher « Fait » · w texte complet · Échap tout effacer
-[b]Gantt[/b]  G : tableau → Gantt par agent → par tâche → tableau · notes « gantt: a-b », lignes agents: / unit: / start: dans Règles · ligne rouge = avancement (cartes cochées, notes « at: 60% »), ┊ = horloge
+[b]Gantt[/b]  G : tableau → Gantt par agent → par tâche → tableau · notes « gantt: a-b », lignes agents: / unit: / start: dans Règles · ligne rouge = avancement (cartes cochées, notes « at: 60% »), ┊ = horloge · ↑↓ (j k) ou un clic : éclaire une ligne d'un bout à l'autre
 [b]Tests[/b]  U : la barre verte / rouge façon JUnit (pytest, unittest, Maven, Gradle) · r lancer / relancer · ↑↓ un test → sa trace · commande : tests
 [b]Fichier[/b]  rechargé tout seul quand il change · r recharger · q quitter
 [b]Thème[/b]  clair / sombre comme VS Code (suit ses changements) · T basculer à la main
@@ -324,6 +324,7 @@ class KanbanApp(App):
         Binding("f", "toggle_done", show=False), Binding("w", "toggle_wrap", show=False), Binding("escape", "clear_filters", show=False),
         Binding("g", "refresh_gh", show=False), Binding("T", "toggle_mode", show=False), Binding("r", "reload", show=False),
         Binding("G", "toggle_gantt", "gantt"), Binding("U", "toggle_tests", "tests"),
+        Binding("up,k", "gantt_row(-1)", show=False), Binding("down,j", "gantt_row(1)", show=False),
         Binding("x", "claude", "claude"), Binding("X", "claude_inbox", show=False),
         Binding("question_mark", "help", "aide"), Binding("q", "quit", "quitter"),
     ]
@@ -346,6 +347,7 @@ class KanbanApp(App):
         self.wrap = False
         self.shown: dict[str, list[Card]] = {}
         self.gantt_by: str | None = None   # None: the board · "agent" / "task": the Gantt view
+        self.gantt_row: int | None = None  # the Gantt row lit up (↑↓ or a click), None: none
         self.test_view = False             # U: the JUnit-style test view
         self.tests: junit.Result | None = None
         self.tests_running = False
@@ -819,8 +821,32 @@ class KanbanApp(App):
     VIEW_KEYS = {"toggle_gantt", "toggle_tests", "quit", "help", "toggle_mode", "reload", "command_palette"}
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
-        """In the Gantt and test views the cards are hidden: no key acts on them."""
+        """In the Gantt and test views the cards are hidden: no key acts on them.
+        ↑↓ pick a Gantt row only in the Gantt view."""
+        if action == "gantt_row":
+            return bool(self.gantt_by)
         return action in self.VIEW_KEYS if (self.gantt_by or self.test_view) else True
+
+    def action_gantt_row(self, step: int) -> None:
+        """↑↓ (or j k): the Gantt row lit up across the whole width, to read it from its name to its bars."""
+        n = gt.row_count(gt.parse(self.board.read_lines()), self.gantt_by or "agent")
+        if n:
+            self.gantt_row = (0 if step > 0 else n - 1) if self.gantt_row is None else (self.gantt_row + step) % n
+            self.draw_gantt()
+
+    def on_click(self, e: events.Click) -> None:
+        """A click on a Gantt row lights it up; on the lit one, puts it out."""
+        if not self.gantt_by:
+            return
+        w = self.query_one("#gantt", Static)
+        off = e.get_content_offset(w)
+        if off is None:
+            return
+        row = off.y + int(w.scroll_offset.y) - gt.HEAD_LINES
+        n = gt.row_count(gt.parse(self.board.read_lines()), self.gantt_by)
+        if 0 <= row < n:
+            self.gantt_row = None if row == self.gantt_row else row
+            self.draw_gantt()
 
     def action_toggle_gantt(self) -> None:
         """G: board → Gantt by agent → Gantt by task → board."""
@@ -829,8 +855,11 @@ class KanbanApp(App):
             self.gantt_by, self.test_view = "agent", False
             self.screen.set_class(False, "tests-view")
         self.screen.set_class(bool(self.gantt_by), "gantt-view")
+        self.gantt_row = None  # another view (by agent / by task): other rows
         if not self.gantt_by:
             self.query_one(f"#list-{self.focused_col()}", OptionList).focus()
+        else:
+            self.set_focus(None)  # ↑↓ for the Gantt rows, not the hidden list
         self.refresh_bindings()
         self.draw_gantt()
 
@@ -843,7 +872,7 @@ class KanbanApp(App):
             w.update(Text("Aucune carte avec une note « gantt: a-b » (voir gantt.py).\nG : retour au tableau.", style=MUTED))
             return
         width = max((w.size.width or self.size.width) - 2, 40)
-        w.update(Text.from_ansi("\n".join(gt.render(plan, width, by=self.gantt_by))))
+        w.update(Text.from_ansi("\n".join(gt.render(plan, width, by=self.gantt_by, selected=self.gantt_row))))
 
     # ── Test view (junit.py): the JUnit bar, green or red ──
     def action_toggle_tests(self) -> None:
