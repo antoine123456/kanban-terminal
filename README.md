@@ -53,6 +53,8 @@ En sortant une carte de « À trier », le tableau demande dans quelle section l
 
 **x** lance [Claude Code](https://claude.com/claude-code) sur la carte choisie : le tableau s'efface, `claude` s'ouvre dans le même terminal, dans le dossier du fichier, avec le texte de la carte (et ses notes) comme première demande. **X** lui demande de traiter toute la boîte « À trier » (« exécute Pending »). Quand tu quittes Claude (`/exit` ou ⌃D deux fois), le tableau revient, rechargé avec ce que Claude a changé dans le fichier. Autre commande : `KANBAN_CLAUDE="claude --model opus" kanban`.
 
+**Pour que Claude s'en serve** : [docs/pour-claude.md](docs/pour-claude.md) dit à Claude comment tenir le fichier (modifications ciblées seulement, Pending → Idées, issues) et y écrire le plan de chaque demande pour le Gantt. Dans le `CLAUDE.md` d'un projet : `@~/Documents/kanban-terminal/docs/pour-claude.md`.
+
 ### Vue Gantt (G)
 
 **G** passe du tableau au Gantt du même fichier (par agent, puis par tâche, puis retour au tableau). Aussi en ligne de commande : `gantt fichier.md` (`--by task`, `--play` rejoue le plan, `--watch` reste ouvert et suit le fichier). Dans la vue, **↑↓** (ou **j k**) ou **un clic** éclairent une ligne d'un bout à l'autre, pour la suivre de son nom jusqu'à ses barres ; un clic sur la ligne éclairée l'éteint. Avec une horloge (`start:`), l'en-tête donne aussi la **fin prévue au rythme réel** : ce qui reste du plan, étiré comme ce qui est fait (« end ≈ 11:17 at this pace (×0.28) » = presque quatre fois plus vite que prévu).
